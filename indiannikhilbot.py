@@ -2,21 +2,21 @@ import time
 import requests
 import yfinance as yf
 
-# --- APNI DETAILS DAALEIN ---
+# --- APNI DETAILS ---
 TELEGRAM_TOKEN = "8876905313:AAHWQ8cD9jADvepC4lQE1psRH9WOxxL21qA"
 CHAT_ID = "1345385952"
 
-# Stocks ki watchlist (IFCI, PFC, Patanjali jaise high-momentum stocks)
+# TATAMOTORS hata diya hai aur reliable high-momentum stocks add kiye hain
 WATCHLIST = [
     "IFCI.NS", "PFC.NS", "PATANJALI.NS", "TATASTEEL.NS", 
-    "BEL.NS", "BHEL.NS", "RELIANCE.NS", "TATAMOTORS.NS"
+    "BEL.NS", "BHEL.NS", "RELIANCE.NS", "SBIN.NS", "NTPC.NS"
 ]
 
 def send_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        requests.post(url, data=payload)
+        requests.post(url, data=payload, timeout=10)
     except Exception as e:
         print(f"Alert error: {e}")
 
@@ -26,14 +26,16 @@ def scan_market():
         try:
             # 15-minute candles fetch karna
             df = yf.download(tickers=symbol, period="5d", interval="15m", progress=False)
-            if len(df) < 25:
+            
+            # Data validation (Render error rokne ke liye)
+            if df is None or df.empty or len(df) < 25:
                 continue
 
-            # Multi-index fix
-            if isinstance(df.columns, tuple):
+            # Multi-index column fix
+            if hasattr(df.columns, 'levels'):
                 df.columns = [col[0] for col in df.columns]
 
-            # 20-candle Volume Average aur High/Low calculate karna
+            # Calculations
             df['Vol_Avg'] = df['Volume'].rolling(window=20).mean()
             df['High_20'] = df['High'].shift(1).rolling(window=20).max()
             df['Low_20'] = df['Low'].shift(1).rolling(window=20).min()
@@ -44,10 +46,10 @@ def scan_market():
             high_20 = float(df['High_20'].iloc[-1])
             low_20 = float(df['Low_20'].iloc[-1])
 
-            # Condition: Volume 2x se zyada ho normal se
+            # Volume 2x spike condition
             is_volume_spike = curr_vol > (avg_vol * 2.0)
 
-            # 1. BIG BULLISH BREAKOUT (Like IFCI)
+            # 1. BIG BULLISH BREAKOUT
             if curr_close > high_20 and is_volume_spike:
                 sl = round(curr_close * 0.985, 2)       # 1.5% SL
                 tgt = round(curr_close * 1.04, 2)       # 4% Target
@@ -64,7 +66,7 @@ def scan_market():
                 send_alert(msg)
                 print(f"Alert sent for {symbol} (BUY)")
 
-            # 2. BIG CRASH / BREAKDOWN (Like PFC/Patanjali)
+            # 2. BIG CRASH / BREAKDOWN
             elif curr_close < low_20 and is_volume_spike:
                 sl = round(curr_close * 1.015, 2)
                 tgt = round(curr_close * 0.96, 2)
@@ -85,9 +87,9 @@ def scan_market():
             print(f"Error checking {symbol}: {e}")
 
 # Startup alert
-send_alert("✅ *Breakout Bot Online!* Laptop se market monitoring shuru ho gayi hai.")
+send_alert("✅ *Breakout Bot Online!* Cloud service par live scan shuru ho chuka hai.")
 
-# Har 5 minute me background me scan chalega
+# Continuous scan har 5 minute mein
 while True:
     scan_market()
     time.sleep(300)
