@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import threading
 from datetime import datetime
 import requests
 import yfinance as yf
@@ -12,7 +13,6 @@ DATA_FILE = "trades_data.json"
 LAST_UPDATE_ID = 0
 BOT_PAUSED = False
 
-# Telegram Cloud Sync Tag
 SYNC_TAG = "#STATE_SYNC#"
 
 def send_alert(message):
@@ -72,7 +72,6 @@ def save_data(data):
 
 trade_state = restore_state_from_telegram()
 
-# 120+ High-Momentum Watchlist
 WATCHLIST = [
     "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
     "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
@@ -89,10 +88,8 @@ WATCHLIST = [
     "MUTHOOTFIN.NS", "BANDHANBNK.NS", "UCOBANK.NS", "CENTRALBK.NS", "BANKINDIA.NS"
 ]
 
-# Clean Dashboard Layout (Unwanted buttons removed)
 def send_menu(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    
     keyboard = {
         "inline_keyboard": [
             [
@@ -113,7 +110,6 @@ def send_menu(text):
             ]
         ]
     }
-
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
@@ -121,7 +117,7 @@ def send_menu(text):
         "reply_markup": json.dumps(keyboard)
     }
     try:
-        requests.post(url, data=payload, timeout=10)
+        requests.post(url, data=payload, timeout=5)
     except Exception as e:
         print(f"Telegram error: {e}")
 
@@ -167,8 +163,8 @@ def handle_callback(query_id, data):
             )
 
     elif data == "btn_sync":
-        send_alert("🔄 *Syncing Market Data...* Live scan running.")
-        scan_market()
+        send_alert("🔄 *Syncing Market Data...* Live scan triggered.")
+        threading.Thread(target=scan_market).start()
 
     elif data == "btn_breakdown":
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -206,23 +202,26 @@ def handle_callback(query_id, data):
         save_data(trade_state)
         send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaare positions square-off kar diye gaye hain.")
 
-def check_telegram_updates():
+# Background thread dedicated to instant button responses
+def fast_telegram_listener():
     global LAST_UPDATE_ID
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={LAST_UPDATE_ID + 1}&timeout=1"
-    try:
-        res = requests.get(url, timeout=3).json()
-        for update in res.get("result", []):
-            LAST_UPDATE_ID = update["update_id"]
-            if "callback_query" in update:
-                q_id = update["callback_query"]["id"]
-                data = update["callback_query"]["data"]
-                handle_callback(q_id, data)
-            elif "message" in update:
-                text = update["message"].get("text", "")
-                if not text.startswith(SYNC_TAG):
-                    send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nButtons se direct operate karein:")
-    except Exception as e:
-        print(f"Listener error: {e}")
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={LAST_UPDATE_ID + 1}&timeout=1"
+            res = requests.get(url, timeout=3).json()
+            for update in res.get("result", []):
+                LAST_UPDATE_ID = update["update_id"]
+                if "callback_query" in update:
+                    q_id = update["callback_query"]["id"]
+                    data = update["callback_query"]["data"]
+                    handle_callback(q_id, data)
+                elif "message" in update:
+                    text = update["message"].get("text", "")
+                    if not text.startswith(SYNC_TAG):
+                        send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nButtons se direct operate karein:")
+        except Exception as e:
+            print(f"Listener error: {e}")
+        time.sleep(0.5)
 
 def classify_trade_style(vol_spike_ratio):
     if vol_spike_ratio >= 4.0:
@@ -250,7 +249,6 @@ def manage_open_positions():
             entry = pos['entry']
             qty = pos['qty']
             
-            # Trailing SL Trigger (+1.5% profit pe safe exit)
             if pos['type'] == "BUY":
                 if not pos.get('trailed', False) and curr_price >= entry * 1.015:
                     pos['sl'] = entry
@@ -298,7 +296,7 @@ def scan_market():
             continue
 
         try:
-            time.sleep(0.2)
+            time.sleep(0.15)
             df = yf.download(tickers=symbol, period="5d", interval="15m", progress=False)
             if df is None or df.empty or len(df) < 25:
                 continue
@@ -349,17 +347,20 @@ def scan_market():
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
 
-# Startup Menu Broadcast
+# Startup Notification
 active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *COMMAND DASHBOARD ONLINE*\n\n"
+    f"🎛️ *LIGHTNING FAST TERMINAL ONLINE*\n\n"
     f"💰 *Demo Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
     f"📂 *Active Trades:* {active_cnt}\n\n"
-    f"Neeche buttons se terminal monitor karein:"
+    f"Buttons ab instant respond karenge:"
 )
 
+# Start fast listener in dedicated parallel thread
+listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
+listener_thread.start()
+
+# Main scanning loop
 while True:
     scan_market()
-    for _ in range(30):
-        check_telegram_updates()
-        time.sleep(10)
+    time.sleep(120)
