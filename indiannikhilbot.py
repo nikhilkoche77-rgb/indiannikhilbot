@@ -25,9 +25,8 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- TELEGRAM CLOUD STORAGE (Permanent State Engine) ---
+# --- TELEGRAM CLOUD STORAGE ---
 def sync_state_to_telegram(state):
-    # Har trade change par Telegram par auto-backup
     payload_str = json.dumps(state)
     msg = f"{SYNC_TAG}\n`{payload_str}`"
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -47,16 +46,13 @@ def restore_state_from_telegram():
     try:
         res = requests.get(url, timeout=10).json()
         updates = res.get("result", [])
-        # Latest sync message reverse order me check karein
         for update in reversed(updates):
             text = update.get("message", {}).get("text", "")
             if SYNC_TAG in text:
                 json_part = text.replace(SYNC_TAG, "").strip().strip("`")
-                restored = json.loads(json_part)
-                print("State successfully restored from Telegram Cloud!")
-                return restored
+                return json.loads(json_part)
     except Exception as e:
-        print(f"Cloud restore failed, checking local: {e}")
+        print(f"Cloud restore failed: {e}")
 
     if os.path.exists(DATA_FILE):
         try:
@@ -72,10 +68,8 @@ def save_data(data):
             json.dump(data, f, indent=4)
     except Exception as e:
         print(f"Local save error: {e}")
-    # Telegram Cloud me bhi real-time push
     sync_state_to_telegram(data)
 
-# Boot up and sync
 trade_state = restore_state_from_telegram()
 
 # 120+ High-Momentum Watchlist
@@ -95,8 +89,10 @@ WATCHLIST = [
     "MUTHOOTFIN.NS", "BANDHANBNK.NS", "UCOBANK.NS", "CENTRALBK.NS", "BANKINDIA.NS"
 ]
 
+# Clean Dashboard Layout (Unwanted buttons removed)
 def send_menu(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    
     keyboard = {
         "inline_keyboard": [
             [
@@ -104,16 +100,8 @@ def send_menu(text):
                 {"text": "💰 Wallets", "callback_data": "btn_wallets"}
             ],
             [
-                {"text": "⚡ Scalp (1:2.0)", "callback_data": "btn_scalp"},
-                {"text": "🎯 Intraday (1:3.0)", "callback_data": "btn_intraday"}
-            ],
-            [
-                {"text": "⚖️ Sizing (25%)", "callback_data": "btn_sizing"},
-                {"text": "🏔️ Swing Max (1:6.0)", "callback_data": "btn_swing"}
-            ],
-            [
                 {"text": "🔄 Refresh / Sync", "callback_data": "btn_sync"},
-                {"text": "📋 Breakdown", "callback_data": "btn_breakdown"}
+                {"text": "📋 Today Breakdown", "callback_data": "btn_breakdown"}
             ],
             [
                 {"text": "📈 Performance", "callback_data": "btn_performance"},
@@ -125,6 +113,7 @@ def send_menu(text):
             ]
         ]
     }
+
     payload = {
         "chat_id": CHAT_ID,
         "text": text,
@@ -143,7 +132,7 @@ def handle_callback(query_id, data):
     if data == "btn_terminal":
         positions = trade_state.get("open_positions", {})
         if not positions:
-            send_menu("📊 *LIVE TERMINAL*\n\nKoi active position nahi chal rahi hai.\nCapital Safe & Idle.")
+            send_menu("📊 *LIVE TERMINAL*\n\nKoi active position open nahi hai.\nCapital Safe & Idle.")
         else:
             msg = "📊 *LIVE TERMINAL: ACTIVE POSITIONS*\n\n"
             for sym, d in positions.items():
@@ -154,9 +143,9 @@ def handle_callback(query_id, data):
         bal = trade_state['virtual_balance']
         allocated = sum([d['entry'] * d['qty'] for d in trade_state.get('open_positions', {}).values()])
         send_menu(
-            f"💰 *WALLET & MARGIN AUDIT*\n\n"
+            f"💰 *WALLET AUDIT*\n\n"
             f"💵 Available Cash: ₹{bal:.2f}\n"
-            f"📊 In-Trade Capital: ₹{allocated:.2f}\n"
+            f"📊 In-Trade Margin: ₹{allocated:.2f}\n"
             f"💼 Total Net Worth: ₹{(bal + allocated):.2f}"
         )
 
@@ -171,26 +160,14 @@ def handle_callback(query_id, data):
             win_rate = (len(wins) / total) * 100
             total_pnl = sum([t.get("pnl", 0) for t in history])
             send_menu(
-                f"📈 *INSTITUTIONAL PERFORMANCE*\n\n"
+                f"📈 *PORTFOLIO PERFORMANCE*\n\n"
                 f"🎯 Win Rate: *{win_rate:.1f}%*\n"
                 f"🔢 Total Closed: {total} (✅ {len(wins)}W | ❌ {len(losses)}L)\n"
                 f"💵 Realized P&L: *{'+' if total_pnl >= 0 else ''}₹{total_pnl:.2f}*"
             )
 
-    elif data == "btn_scalp":
-        send_menu("⚡ *SCALP ENGINE*\n\nTrigger: > 4.0x RVOL Spikes\nTarget: +2.0%\nSL: 1.2%\nRR: 1:2.0")
-
-    elif data == "btn_intraday":
-        send_menu("🎯 *INTRADAY ENGINE*\n\nTrigger: 20-Candle High + >2.5x Volume\nTarget: +3.5%\nSL: 1.5%\nRR: 1:3.0")
-
-    elif data == "btn_swing":
-        send_menu("🏔️ *SWING MAX ENGINE*\n\nTrigger: 20-Day Range Expansion\nTarget: +6.0% to +12.0%\nSL: 2.5%\nRR: 1:6.0")
-
-    elif data == "btn_sizing":
-        send_menu("⚖️ *POSITION SIZING*\n\nMax Per Trade: 25% Capital\nPortfolio Risk Guard: Max 2%\nMode: Auto Sizing")
-
     elif data == "btn_sync":
-        send_alert("🔄 *Syncing Market Data...* Scanning watchlist now.")
+        send_alert("🔄 *Syncing Market Data...* Live scan running.")
         scan_market()
 
     elif data == "btn_breakdown":
@@ -199,23 +176,23 @@ def handle_callback(query_id, data):
         pnl = sum([t.get("pnl", 0) for t in today_trades])
         send_menu(
             f"📋 *TODAY'S BREAKDOWN ({today_str})*\n\n"
-            f"Trades: {len(today_trades)}\n"
-            f"Net Daily P&L: {'+' if pnl >= 0 else ''}₹{pnl:.2f}\n"
-            f"Capital Buffer: ₹{trade_state['virtual_balance']:.2f}"
+            f"Trades Executed: {len(today_trades)}\n"
+            f"Day's Realized P&L: {'+' if pnl >= 0 else ''}₹{pnl:.2f}\n"
+            f"Available Cash: ₹{trade_state['virtual_balance']:.2f}"
         )
 
     elif data == "btn_pause":
         BOT_PAUSED = True
-        send_menu("⏸️ *SCANNER PAUSED*\nNaye breakout alerts paused hain.")
+        send_menu("⏸️ *SCANNER PAUSED*\nNaye breakout alerts temporary stop kar diye gaye hain.")
 
     elif data == "btn_resume":
         BOT_PAUSED = False
-        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning live shuru ho gayi.")
+        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning fir se active ho gayi hai.")
 
     elif data == "btn_panic":
         positions = list(trade_state.get("open_positions", {}).items())
         if not positions:
-            send_menu("🚨 *PANIC EXIT*\nKoi open trade nahi hai.")
+            send_menu("🚨 *PANIC EXIT*\nKoi open position nahi mili.")
             return
 
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -227,7 +204,7 @@ def handle_callback(query_id, data):
             })
             del trade_state["open_positions"][sym]
         save_data(trade_state)
-        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaari positions close kar di gayi hain.")
+        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaare positions square-off kar diye gaye hain.")
 
 def check_telegram_updates():
     global LAST_UPDATE_ID
@@ -243,7 +220,7 @@ def check_telegram_updates():
             elif "message" in update:
                 text = update["message"].get("text", "")
                 if not text.startswith(SYNC_TAG):
-                    send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nNeeche buttons par tap karein:")
+                    send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nButtons se direct operate karein:")
     except Exception as e:
         print(f"Listener error: {e}")
 
@@ -273,7 +250,7 @@ def manage_open_positions():
             entry = pos['entry']
             qty = pos['qty']
             
-            # Trailing SL Trigger (+1.5% profit pe risk zero)
+            # Trailing SL Trigger (+1.5% profit pe safe exit)
             if pos['type'] == "BUY":
                 if not pos.get('trailed', False) and curr_price >= entry * 1.015:
                     pos['sl'] = entry
@@ -372,17 +349,15 @@ def scan_market():
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
 
-# Startup Notification with buttons
+# Startup Menu Broadcast
 active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *INSTITUTIONAL TERMINAL ONLINE*\n\n"
+    f"🎛️ *COMMAND DASHBOARD ONLINE*\n\n"
     f"💰 *Demo Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
-    f"📂 *Restored Active Trades:* {active_cnt}\n"
-    f"☁️ *Telegram Cloud Storage:* Synced & Safe\n\n"
-    f"Neeche buttons diye gaye hain, Live Terminal tap karein:"
+    f"📂 *Active Trades:* {active_cnt}\n\n"
+    f"Neeche buttons se terminal monitor karein:"
 )
 
-# Loop with Instant Button Listener
 while True:
     scan_market()
     for _ in range(30):
