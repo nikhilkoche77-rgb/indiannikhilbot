@@ -6,14 +6,12 @@ from datetime import datetime
 import requests
 import yfinance as yf
 
-# --- BOT CREDENTIALS ---
+# --- BOT CONFIGURATION ---
 TELEGRAM_TOKEN = "8876905313:AAHWQ8cD9jADvepC4lQE1psRH9WOxxL21qA"
 CHAT_ID = "1345385952"
 DATA_FILE = "trades_data.json"
 LAST_UPDATE_ID = 0
 BOT_PAUSED = False
-
-SYNC_TAG = "#STATE_SYNC#"
 
 def send_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -25,40 +23,50 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- TELEGRAM CLOUD SYNC ENGINE ---
-def sync_state_to_telegram(state):
-    payload_str = json.dumps(state)
-    msg = f"{SYNC_TAG}\n`{payload_str}`"
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    try:
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
-    except Exception as e:
-        print(f"Cloud backup error: {e}")
-
-def restore_state_from_telegram():
+# --- PERMANENT DATA LOADER ---
+def load_data():
+    # Aapke screenshot ke running trades aur bacha hua exact balance
     default_data = {
-        "virtual_balance": 10000.00,
+        "virtual_balance": 175.89,
         "initial_capital": 10000.00,
-        "open_positions": {},
+        "open_positions": {
+            "INOXWIND.NS": {
+                "type": "BUY",
+                "entry": 75.71,
+                "qty": 33,
+                "sl": 74.57,
+                "target": 78.36,
+                "style": "🎯 INTRADAY",
+                "trailed": False
+            },
+            "NYKAA.NS": {
+                "type": "BUY",
+                "entry": 336.60,
+                "qty": 7,
+                "sl": 331.55,
+                "target": 348.38,
+                "style": "🎯 INTRADAY",
+                "trailed": False
+            },
+            "JPPOWER.NS": {
+                "type": "BUY",
+                "entry": 17.04,
+                "qty": 146,
+                "sl": 16.78,
+                "target": 17.64,
+                "style": "🎯 INTRADAY",
+                "trailed": False
+            }
+        },
         "trade_history": []
     }
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?limit=50"
-    try:
-        res = requests.get(url, timeout=10).json()
-        updates = res.get("result", [])
-        for update in reversed(updates):
-            text = update.get("message", {}).get("text", "")
-            if SYNC_TAG in text:
-                json_part = text.replace(SYNC_TAG, "").strip().strip("`")
-                print("State recovered from Telegram Cloud.")
-                return json.loads(json_part)
-    except Exception as e:
-        print(f"Cloud restore fallback: {e}")
 
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
-                return json.load(f)
+                saved = json.load(f)
+                if saved.get("open_positions") or len(saved.get("trade_history", [])) > 0:
+                    return saved
         except Exception:
             pass
     return default_data
@@ -69,11 +77,10 @@ def save_data(data):
             json.dump(data, f, indent=4)
     except Exception as e:
         print(f"File save error: {e}")
-    sync_state_to_telegram(data)
 
-trade_state = restore_state_from_telegram()
+trade_state = load_data()
 
-# 165 Institutional Momentum, Scalping & Swing Watchlist
+# 165 High-Momentum Watchlist
 WATCHLIST = [
     "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
     "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
@@ -203,7 +210,7 @@ def handle_callback(query_id, data):
 
     elif data == "btn_resume":
         BOT_PAUSED = False
-        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning live shuru ho gayi.")
+        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning fir se active ho gayi hai.")
 
     elif data == "btn_panic":
         positions = list(trade_state.get("open_positions", {}).items())
@@ -235,9 +242,7 @@ def fast_telegram_listener():
                     data = update["callback_query"]["data"]
                     handle_callback(q_id, data)
                 elif "message" in update:
-                    text = update["message"].get("text", "")
-                    if not text.startswith(SYNC_TAG):
-                        send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nButtons se direct operate karein:")
+                    send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nButtons se direct operate karein:")
         except Exception as e:
             print(f"Listener warning: {e}")
         time.sleep(0.5)
