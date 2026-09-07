@@ -23,13 +23,21 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- PERMANENT DATA LOADER ---
+# --- STATE LOADER WITH YOUR ACTIVE TRADES RESTORED ---
 def load_data():
-    # Aapke screenshot ke running trades aur bacha hua exact balance
     default_data = {
         "virtual_balance": 175.89,
         "initial_capital": 10000.00,
         "open_positions": {
+            "GAIL.NS": {
+                "type": "BUY",
+                "entry": 177.20,
+                "qty": 14,
+                "sl": 174.54,
+                "target": 183.40,
+                "style": "🎯 INTRADAY",
+                "trailed": False
+            },
             "INOXWIND.NS": {
                 "type": "BUY",
                 "entry": 75.71,
@@ -80,7 +88,7 @@ def save_data(data):
 
 trade_state = load_data()
 
-# 165 High-Momentum Watchlist
+# 165 Momentum Watchlist
 WATCHLIST = [
     "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
     "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
@@ -274,6 +282,7 @@ def manage_open_positions():
             qty = pos['qty']
             
             if pos['type'] == "BUY":
+                # Trailing SL Trigger (+1.5% move par safe)
                 if not pos.get('trailed', False) and curr_price >= entry * 1.015:
                     pos['sl'] = entry
                     pos['trailed'] = True
@@ -313,9 +322,15 @@ def scan_market():
     if BOT_PAUSED:
         return
 
+    # First track existing trades
     manage_open_positions()
 
+    # GUARD: Agar balance ₹1000 se kam hai toh naye trades mat dhoondo jab tak purana exit na ho
+    if trade_state["virtual_balance"] < 1000.0:
+        return
+
     for symbol in WATCHLIST:
+        # STRICT DUPLICATE GUARD: Ek stock me do baar trade nahi lagega
         if symbol in trade_state.get("open_positions", {}):
             continue
 
@@ -370,21 +385,20 @@ def scan_market():
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
 
-# Startup Menu Broadcast
+# Startup Notification
 active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *INSTITUTIONAL PAPER TERMINAL READY*\n\n"
+    f"🎛️ *INSTITUTIONAL TERMINAL ONLINE*\n\n"
     f"💰 *Demo Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
-    f"📂 *Active Restored Trades:* {active_cnt}\n"
-    f"📡 165 Stocks Monitoring 24/7\n\n"
-    f"Terminal aur performance live check karne ke liye buttons use karein:"
+    f"📂 *Active Restored Trades:* {active_cnt}\n\n"
+    f"Neeche buttons se terminal monitor karein:"
 )
 
-# Start multi-threaded Telegram listener
+# Multi-threaded fast listener start
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
 listener_thread.start()
 
-# Main scanning loop
+# Main Loop
 while True:
     scan_market()
     time.sleep(120)
