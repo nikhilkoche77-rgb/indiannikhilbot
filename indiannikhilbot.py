@@ -23,13 +23,13 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- DUAL-WALLET STATE LOADER (INR & USD SEPARATED) ---
+# --- DUAL-WALLET STATE LOADER ($100 USD & ₹10,000 INR) ---
 def load_data():
     default_data = {
         "virtual_balance_inr": 175.89,     # Indian Equity Pool (₹)
-        "virtual_balance_usd": 1000.00,    # Forex / Crypto Pool ($)
+        "virtual_balance_usd": 100.00,     # Forex / Crypto Micro Pool ($100)
         "initial_capital_inr": 10000.00,
-        "initial_capital_usd": 1000.00,
+        "initial_capital_usd": 100.00,
         "open_positions": {
             "GAIL.NS": {"type": "BUY", "entry": 177.20, "qty": 14, "sl": 174.54, "target": 183.40, "style": "🎯 INTRADAY", "trailed_level": 0, "currency": "INR"},
             "INOXWIND.NS": {"type": "BUY", "entry": 75.71, "qty": 33, "sl": 74.57, "target": 78.36, "style": "🎯 INTRADAY", "trailed_level": 0, "currency": "INR"},
@@ -43,8 +43,7 @@ def load_data():
         try:
             with open(DATA_FILE, "r") as f:
                 saved = json.load(f)
-                if "virtual_balance_usd" not in saved:
-                    saved["virtual_balance_usd"] = 1000.00
+                saved["virtual_balance_usd"] = 100.00  # Force set to $100
                 if "virtual_balance_inr" not in saved:
                     saved["virtual_balance_inr"] = saved.get("virtual_balance", 175.89)
                 return saved
@@ -119,13 +118,31 @@ def format_clean_symbol(symbol):
         return symbol
     return symbol.replace(".NS", "")
 
+def classify_trade_style(vol_spike_ratio, is_fx=False):
+    if is_fx:
+        # Forex / Crypto Setup Modes
+        if vol_spike_ratio >= 4.0:
+            return "⚡ FX SCALP", 0.0040, 0.0080, "0.01 Lot"
+        elif vol_spike_ratio >= 2.5:
+            return "🎯 FX INTRADAY", 0.0080, 0.0180, "0.01 Lot"
+        else:
+            return "🏔️ FX SWING", 0.0150, 0.0350, "0.01 Lot"
+    else:
+        # Indian Stocks Setup Modes
+        if vol_spike_ratio >= 4.0:
+            return "⚡ SCALP", 0.012, 0.025, ""
+        elif vol_spike_ratio >= 2.5:
+            return "🎯 INTRADAY", 0.015, 0.035, ""
+        else:
+            return "🏔️ SWING", 0.025, 0.060, ""
+
 def send_menu(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     keyboard = {
         "inline_keyboard": [
             [
                 {"text": "📊 Live Terminal", "callback_data": "btn_terminal"},
-                {"text": "💰 Wallets (INR/USD)", "callback_data": "btn_wallets"}
+                {"text": "💰 Wallets (INR/$100)", "callback_data": "btn_wallets"}
             ],
             [
                 {"text": "🔄 Refresh / Sync", "callback_data": "btn_sync"},
@@ -190,20 +207,20 @@ def handle_callback(query_id, data):
         usd_cash = trade_state['virtual_balance_usd']
         
         inr_alloc = sum([d['entry'] * d['qty'] for sym, d in trade_state.get('open_positions', {}).items() if not is_forex_or_crypto(sym)])
-        usd_alloc = sum([d['entry'] * d['qty'] for sym, d in trade_state.get('open_positions', {}).items() if is_forex_or_crypto(sym)])
+        usd_alloc = sum([20.0 for sym in trade_state.get('open_positions', {}) if is_forex_or_crypto(sym)])
 
         send_menu(
             f"💰 *SEPARATED WALLET AUDIT*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🇮🇳 *INDIAN EQUITIES DEMO POOL:*\n"
-            f"• Available Cash: ₹{inr_cash:.2f}\n"
-            f"• Allocated Margin: ₹{inr_alloc:.2f}\n"
-            f"• Total Portfolio: ₹{(inr_cash + inr_alloc):.2f}\n"
+            f"• Cash Available: ₹{inr_cash:.2f}\n"
+            f"• In-Trade Allocated: ₹{inr_alloc:.2f}\n"
+            f"• Portfolio Value: ₹{(inr_cash + inr_alloc):.2f}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 *FOREX / VANTAGE / XM DEMO POOL:*\n"
-            f"• Available Balance: ${usd_cash:.2f} USD\n"
+            f"🌐 *FOREX / VANTAGE / XM DEMO ($100):*\n"
+            f"• Available Cash: ${usd_cash:.2f} USD\n"
             f"• Active Margin: ${usd_alloc:.2f} USD\n"
-            f"• Total Account Value: ${(usd_cash + usd_alloc):.2f} USD"
+            f"• Total Equity: ${(usd_cash + usd_alloc):.2f} USD"
         )
 
     elif data == "btn_performance":
@@ -220,15 +237,15 @@ def handle_callback(query_id, data):
             pnl_usd = sum([t.get("pnl", 0) for t in history if t.get("currency") == "USD"])
 
             send_menu(
-                f"📈 *TOTAL ACCUMULATED PERFORMANCE*\n"
+                f"📈 *TOTAL PERFORMANCE*\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"🎯 Win Rate: *{win_rate:.1f}%* ({len(wins)}W | {len(losses)}L)\n"
-                f"🇮🇳 Realized Indian Equities P&L: *{'+' if pnl_inr >= 0 else ''}₹{pnl_inr:.2f}*\n"
-                f"🌐 Realized Forex/Crypto P&L: *{'+' if pnl_usd >= 0 else ''}${pnl_usd:.2f} USD*"
+                f"🇮🇳 Equities Realized P&L: *{'+' if pnl_inr >= 0 else ''}₹{pnl_inr:.2f}*\n"
+                f"🌐 Forex/Crypto Realized P&L: *{'+' if pnl_usd >= 0 else ''}${pnl_usd:.2f} USD*"
             )
 
     elif data == "btn_sync":
-        send_alert("🔄 *Syncing Live Markets (Equities + Forex + Crypto)...*")
+        send_alert("🔄 *Syncing Live Markets...*")
         threading.Thread(target=scan_market).start()
 
     elif data == "btn_breakdown":
@@ -238,18 +255,18 @@ def handle_callback(query_id, data):
         pnl_usd = sum([t.get("pnl", 0) for t in today_trades if t.get("currency") == "USD"])
         send_menu(
             f"📋 *TODAY'S BREAKDOWN ({today_str})*\n\n"
-            f"Total Trades: {len(today_trades)}\n"
+            f"Trades: {len(today_trades)}\n"
             f"🇮🇳 INR Day P&L: {'+' if pnl_inr >= 0 else ''}₹{pnl_inr:.2f}\n"
             f"🌐 USD Day P&L: {'+' if pnl_usd >= 0 else ''}${pnl_usd:.2f} USD"
         )
 
     elif data == "btn_pause":
         BOT_PAUSED = True
-        send_menu("⏸️ *SCANNER PAUSED*\nNaye breakout alerts band hain.")
+        send_menu("⏸️ *SCANNER PAUSED*")
 
     elif data == "btn_resume":
         BOT_PAUSED = False
-        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning fir shuru ho gayi.")
+        send_menu("▶️ *SCANNER RESUMED*")
 
     elif data == "btn_panic":
         positions = list(trade_state.get("open_positions", {}).items())
@@ -261,7 +278,7 @@ def handle_callback(query_id, data):
         for sym, d in positions:
             curr = d.get("currency", "INR")
             if curr == "USD":
-                trade_state["virtual_balance_usd"] += (d["entry"] * d["qty"])
+                trade_state["virtual_balance_usd"] += 20.0
             else:
                 trade_state["virtual_balance_inr"] += (d["entry"] * d["qty"])
 
@@ -291,14 +308,6 @@ def fast_telegram_listener():
             print(f"Listener warning: {e}")
         time.sleep(0.5)
 
-def classify_trade_style(vol_spike_ratio):
-    if vol_spike_ratio >= 4.0:
-        return "⚡ SCALP", 0.012, 0.025
-    elif vol_spike_ratio >= 2.5:
-        return "🎯 INTRADAY", 0.015, 0.035
-    else:
-        return "🏔️ SWING", 0.025, 0.060
-
 def manage_open_positions():
     global trade_state
     closed = []
@@ -323,34 +332,28 @@ def manage_open_positions():
             curr = pos.get("currency", "USD" if is_fx else "INR")
 
             if pos['type'] == "BUY":
-                # Multi-level dynamic trailing
-                if current_level < 1 and gain_pct >= 1.2:
+                # Trailing Level 1: Breakeven
+                trail_trigger = 0.50 if is_fx else 1.20
+                if current_level < 1 and gain_pct >= trail_trigger:
                     pos['sl'] = round(entry, 4 if is_fx else 2)
                     pos['trailed_level'] = 1
                     save_data(trade_state)
                     tag = "🌐 *[VANTAGE/XM]*" if is_fx else "🇮🇳 *[INDIAN STOCK]*"
-                    send_alert(f"🛡️ {tag} Trailing Level 1: `{clean_name}`\nGain: +{gain_pct:.2f}%\nSL locked to Cost (Zero Risk Locked!)")
-
-                elif current_level < 2 and gain_pct >= 2.0:
-                    pos['sl'] = round(entry * 1.008, 4 if is_fx else 2)
-                    pos['trailed_level'] = 2
-                    save_data(trade_state)
-                    tag = "🌐 *[VANTAGE/XM]*" if is_fx else "🇮🇳 *[INDIAN STOCK]*"
-                    send_alert(f"🚀 {tag} Trailing Level 2: `{clean_name}`\nGain: +{gain_pct:.2f}%\nSL moved to +0.8% Profit!")
+                    send_alert(f"🛡️ {tag} Trailing Active: `{clean_name}`\nGain: +{gain_pct:.2f}%\nSL locked to Entry Price (Zero Risk!)")
 
                 # Target Hit
                 if curr_price >= pos['target']:
                     profit = round((curr_price - entry) * qty, 2)
                     if curr == "USD":
-                        trade_state["virtual_balance_usd"] += (curr_price * qty)
+                        trade_state["virtual_balance_usd"] += (20.0 + profit)
                         send_alert(
                             f"🎯 *TARGET HIT: TAKE PROFIT REACHED*\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"🌐 *Broker:* Vantage / XM\n"
-                            f"📊 *Asset:* `{clean_name}`\n"
+                            f"📊 *Asset:* `{clean_name}` ({pos['style']})\n"
                             f"💵 *Exit:* `${curr_price:.4f}`\n"
                             f"💰 *Profit:* `+${profit:.2f} USD`\n"
-                            f"💼 *Forex Balance:* `${trade_state['virtual_balance_usd']:.2f} USD`"
+                            f"💼 *Forex Balance ($100 Pool):* `${trade_state['virtual_balance_usd']:.2f} USD`"
                         )
                     else:
                         trade_state["virtual_balance_inr"] += (curr_price * qty)
@@ -373,7 +376,7 @@ def manage_open_positions():
                     pnl = round((curr_price - entry) * qty, 2)
                     outcome = "WIN" if pnl >= 0 else "LOSS"
                     if curr == "USD":
-                        trade_state["virtual_balance_usd"] += (curr_price * qty)
+                        trade_state["virtual_balance_usd"] += (20.0 + pnl)
                         title = "🛡️ *TRAILING SL HIT (PROFIT SECURED)*" if pnl >= 0 else "🛑 *STOP LOSS HIT*"
                         send_alert(
                             f"{title}\n"
@@ -382,7 +385,7 @@ def manage_open_positions():
                             f"📊 *Asset:* `{clean_name}`\n"
                             f"💵 *Exit:* `${curr_price:.4f}`\n"
                             f"💰 *P&L:* `{'+' if pnl >= 0 else ''}${pnl:.2f} USD`\n"
-                            f"💼 *Forex Balance:* `${trade_state['virtual_balance_usd']:.2f} USD`"
+                            f"💼 *Forex Balance ($100 Pool):* `${trade_state['virtual_balance_usd']:.2f} USD`"
                         )
                     else:
                         trade_state["virtual_balance_inr"] += (curr_price * qty)
@@ -440,46 +443,46 @@ def scan_market():
             vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 1.0
 
             if vol_ratio >= 2.0 and curr_close > high_20:
-                style_name, sl_pct, tgt_pct = classify_trade_style(vol_ratio)
-                clean_sym = format_clean_symbol(symbol)
                 is_fx = is_forex_or_crypto(symbol)
+                style_name, sl_pct, tgt_pct, rec_lot = classify_trade_style(vol_ratio, is_fx=is_fx)
+                clean_sym = format_clean_symbol(symbol)
 
                 # ==========================================
-                # 🌐 FOREX, GOLD & CRYPTO BRANCH (VANTAGE / XM)
+                # 🌐 FOREX, GOLD & CRYPTO ($100 MICRO POOL)
                 # ==========================================
                 if is_fx:
-                    if trade_state["virtual_balance_usd"] < 50.0:
+                    if trade_state["virtual_balance_usd"] < 20.0:
                         continue
 
                     sl = round(curr_close * (1 - sl_pct), 4)
                     tgt = round(curr_close * (1 + tgt_pct), 4)
-                    trade_fund_usd = 100.00
-                    trade_state["virtual_balance_usd"] -= trade_fund_usd
+                    trade_state["virtual_balance_usd"] -= 20.00
 
                     trade_state["open_positions"][symbol] = {
-                        'type': 'BUY', 'entry': curr_close, 'qty': 0.05,
+                        'type': 'BUY', 'entry': curr_close, 'qty': 0.01,
                         'sl': sl, 'target': tgt, 'style': style_name, 'trailed_level': 0, 'currency': "USD"
                     }
                     save_data(trade_state)
 
                     send_alert(
-                        f"🌐 *[VANTAGE / XM ALERT]: BUY SIGNAL*\n"
+                        f"🌐 *[VANTAGE / XM ALERT]: {style_name}*\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"📊 *Pair / Asset:* `{clean_sym}`\n"
-                        f"⚡ *Action:* `BUY NOW` (Market Order)\n"
-                        f"💵 *Entry Price:* `{curr_close:.4f}`\n"
-                        f"🛑 *Stop Loss:* `{sl:.4f}`\n"
-                        f"🎯 *Take Profit:* `{tgt:.4f}`\n"
+                        f"⚡ *Action:* `BUY MARKET`\n"
+                        f"💵 *Entry:* `{curr_close:.4f}`\n"
+                        f"🛑 *Stop Loss:* `{sl:.4f}` (-{sl_pct*100:.2f}%)\n"
+                        f"🎯 *Take Profit:* `{tgt:.4f}` (+{tgt_pct*100:.2f}%)\n"
                         f"🔥 *Volume Surge:* `{vol_ratio:.1f}x Spike`\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"📌 *MT4 / MT5 Execution:*\n"
-                        f"• Recommended Lot: `0.01 - 0.05 Lot`\n"
-                        f"• Trailing Mode: `Auto Cost-to-Cost @ +1.2%`\n"
-                        f"💼 *Forex Demo Pool Balance:* `${trade_state['virtual_balance_usd']:.2f} USD`"
+                        f"📌 *MT4 / MT5 Order Parameters:*\n"
+                        f"• Account Base: `$100 USD Micro`\n"
+                        f"• Lot Sizing: `{rec_lot}`\n"
+                        f"• Margin Allocated: `$20.00 USD`\n"
+                        f"💼 *Cash Remaining:* `${trade_state['virtual_balance_usd']:.2f} USD`"
                     )
 
                 # ==========================================
-                # 🇮🇳 INDIAN EQUITIES BRANCH (NSE / BSE)
+                # 🇮🇳 INDIAN EQUITIES (₹10,000 DEMO POOL)
                 # ==========================================
                 else:
                     if trade_state["virtual_balance_inr"] < 1000.0:
@@ -501,28 +504,27 @@ def scan_market():
                     save_data(trade_state)
 
                     send_alert(
-                        f"🇮🇳 *[INDIAN EQUITIES ALERT]: BUY SIGNAL*\n"
+                        f"🇮🇳 *[INDIAN EQUITIES ALERT]: {style_name}*\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
-                        f"📊 *Type:* `{style_name}`\n"
                         f"📈 *Stock:* `{clean_sym}`\n"
                         f"💵 *Entry:* `₹{curr_close:.2f}` | *Qty:* `{qty}`\n"
                         f"🛑 *SL:* `₹{sl}`\n"
                         f"🎯 *Target:* `₹{tgt}`\n"
                         f"🔥 *Volume:* `{vol_ratio:.1f}x Spike`\n"
-                        f"💼 *INR Cash Left:* `₹{trade_state['virtual_balance_inr']:.2f}`"
+                        f"💼 *INR Cash Remaining:* `₹{trade_state['virtual_balance_inr']:.2f}`"
                     )
 
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
 
-# Initial Startup Notification
+# Startup Menu Notification
 active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *MULTI-TERMINAL ACTIVE*\n\n"
+    f"🎛️ *MULTI-ASSET ENGINE ONLINE*\n\n"
     f"🇮🇳 *Indian Equity Demo:* ₹{trade_state['virtual_balance_inr']:.2f}\n"
-    f"🌐 *Forex/Crypto Demo:* ${trade_state['virtual_balance_usd']:.2f} USD\n"
+    f"🌐 *Forex/Crypto Pool:* ${trade_state['virtual_balance_usd']:.2f} USD (Fresh $100)\n"
     f"📂 *Active Restored Trades:* {active_cnt}\n\n"
-    f"Terminal aur separate wallets monitor karne ke liye buttons use karein:"
+    f"Modes: ⚡ Scalp | 🎯 Intraday | 🏔️ Swing"
 )
 
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
