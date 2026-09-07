@@ -23,7 +23,7 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- DUAL-WALLET LOADER (INR + USD SEPARATED) ---
+# --- DUAL-WALLET STATE LOADER ---
 def load_data():
     default_data = {
         "virtual_balance_inr": 175.89,
@@ -60,13 +60,9 @@ def save_data(data):
 
 trade_state = load_data()
 
-# ⚡ DEDICATED SCALPING ASSETS (5-Minute Fast Execution Engine)
 SCALP_ASSETS = ["GC=F", "BTC-USD", "ETH-USD"]
-
-# 🌐 FOREX STANDARD ASSETS (15-Minute Intraday Engine)
 FOREX_STANDARD = ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X"]
 
-# 🇮🇳 INDIAN EQUITIES WATCHLIST (15-Minute Institutional Engine)
 WATCHLIST_STOCKS = [
     "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
     "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
@@ -150,32 +146,51 @@ def handle_callback(query_id, data):
     global trade_state, BOT_PAUSED
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery", data={"callback_query_id": query_id})
 
+    # --- SEPARATED LIVE TERMINAL (INDIAN & FOREX DISTINCT CARDS) ---
     if data == "btn_terminal":
         positions = trade_state.get("open_positions", {})
-        if not positions:
-            send_menu("📊 *LIVE TERMINAL*\n\nKoi active trade open nahi hai.")
-        else:
-            msg_inr = "🇮🇳 *INDIAN POSITIONS*\n"
-            msg_fx = "\n🌐 *VANTAGE/XM POSITIONS*\n"
-            has_inr = False
-            has_fx = False
+        
+        inr_positions = {k: v for k, v in positions.items() if not is_forex_or_crypto(k)}
+        fx_positions = {k: v for k, v in positions.items() if is_forex_or_crypto(k)}
 
-            for sym, d in positions.items():
+        msg = "📊 *MULTI-ASSET LIVE TERMINAL*\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+
+        # 🇮🇳 Indian Section
+        msg += f"🇮🇳 *INDIAN EQUITIES [{len(inr_positions)} Active]*\n"
+        if inr_positions:
+            for sym, d in inr_positions.items():
                 level = d.get('trailed_level', 0)
-                trail_info = "Cost Locked" if level == 1 else "Initial SL"
-                clean_name = format_clean_symbol(sym)
+                trail_tag = "🛡️ Trailed Cost" if level == 1 else "Initial SL"
+                clean = format_clean_symbol(sym)
+                msg += (
+                    f"• *{clean}* ({d['style']})\n"
+                    f"  Qty: `{d['qty']}` | Entry: `₹{d['entry']:.2f}`\n"
+                    f"  SL: `₹{d['sl']:.2f}` ({trail_tag})\n"
+                    f"  Tgt: `₹{d['target']:.2f}`\n\n"
+                )
+        else:
+            msg += "_(Koi Indian position active nahi hai)_\n\n"
 
-                if is_forex_or_crypto(sym):
-                    has_fx = True
-                    msg_fx += f"• *{clean_name}* ({d['style']})\n  Lot: {d['qty']} | Entry: {d['entry']:.4f}\n  SL: {d['sl']:.4f} ({trail_info}) | Tgt: {d['target']:.4f}\n\n"
-                else:
-                    has_inr = True
-                    msg_inr += f"• *{clean_name}* ({d['style']})\n  Qty: {d['qty']} | Entry: ₹{d['entry']:.2f}\n  SL: ₹{d['sl']:.2f} ({trail_info}) | Tgt: ₹{d['target']:.2f}\n\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
 
-            final_msg = ""
-            if has_inr: final_msg += msg_inr
-            if has_fx: final_msg += msg_fx
-            send_menu(final_msg)
+        # 🌐 Forex / Crypto Section
+        msg += f"🌐 *FOREX / VANTAGE / XM [{len(fx_positions)} Active]*\n"
+        if fx_positions:
+            for sym, d in fx_positions.items():
+                level = d.get('trailed_level', 0)
+                trail_tag = "🛡️ Breakeven" if level == 1 else "Initial SL"
+                clean = format_clean_symbol(sym)
+                msg += (
+                    f"• *{clean}* ({d['style']})\n"
+                    f"  Lot: `{d['qty']}` | Entry: `${d['entry']:.4f}`\n"
+                    f"  SL: `${d['sl']:.4f}` ({trail_tag})\n"
+                    f"  TP: `${d['target']:.4f}`\n\n"
+                )
+        else:
+            msg += "_(Koi Forex/Crypto position active nahi hai)_\n"
+
+        send_menu(msg)
 
     elif data == "btn_wallets":
         inr_cash = trade_state['virtual_balance_inr']
@@ -261,7 +276,7 @@ def handle_callback(query_id, data):
             })
             del trade_state["open_positions"][sym]
         save_data(trade_state)
-        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaare trades close kar diye gaye hain.")
+        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaare open trades cancel/close ho gaye hain.")
 
 def fast_telegram_listener():
     global LAST_UPDATE_ID
@@ -305,7 +320,6 @@ def manage_open_positions():
             clean_name = format_clean_symbol(symbol)
             curr = pos.get("currency", "USD" if is_fx else "INR")
 
-            # Trailing Trigger: Scalp = +0.25%, Standard = +1.2%
             trail_point = 0.25 if symbol in SCALP_ASSETS else (0.60 if is_fx else 1.20)
 
             if pos['type'] == "BUY":
@@ -314,7 +328,7 @@ def manage_open_positions():
                     pos['trailed_level'] = 1
                     save_data(trade_state)
                     tag = "⚡ *[5M SCALP TRAIL]*" if symbol in SCALP_ASSETS else "🛡️ *[TRAILING ACTIVE]*"
-                    send_alert(f"{tag}: `{clean_name}`\nGain: +{gain_pct:.2f}%\nStop Loss locked at Entry bhav (Cost Locked!)")
+                    send_alert(f"{tag}: `{clean_name}`\nGain: +{gain_pct:.2f}%\nSL locked to Entry Cost!")
 
                 # Target Hit
                 if curr_price >= pos['target']:
@@ -394,9 +408,7 @@ def scan_market():
 
     manage_open_positions()
 
-    # ==============================================================
-    # ⚡ ENGINE 1: BTC, ETH & GOLD 5-MINUTE HIGH-SPEED SCALPER
-    # ==============================================================
+    # ⚡ ENGINE 1: BTC, ETH & GOLD 5M SCALPER
     if trade_state["virtual_balance_usd"] >= 20.0:
         for symbol in SCALP_ASSETS:
             if symbol in trade_state.get("open_positions", {}):
@@ -421,10 +433,9 @@ def scan_market():
 
                 vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 1.0
 
-                # 5m Scalper Condition: Price > EMA20, Volume > 2.5x, Breakout 10-bar High
                 if curr_close > ema20 and curr_close > high_10 and vol_ratio >= 2.5:
-                    sl = round(curr_close * (1 - 0.0035), 4)    # 0.35% Tight SL
-                    tgt = round(curr_close * (1 + 0.0070), 4)   # 0.70% Scalp Target (1:2 RR)
+                    sl = round(curr_close * (1 - 0.0035), 4)
+                    tgt = round(curr_close * (1 + 0.0070), 4)
                     trade_state["virtual_balance_usd"] -= 20.00
 
                     trade_state["open_positions"][symbol] = {
@@ -454,9 +465,7 @@ def scan_market():
             except Exception as e:
                 print(f"Scalp error {symbol}: {e}")
 
-    # ==============================================================
-    # 🌐 ENGINE 2: FOREX STANDARD (15-Minute Intraday Engine)
-    # ==============================================================
+    # 🌐 ENGINE 2: FOREX 15M INTRADAY
     if trade_state["virtual_balance_usd"] >= 20.0:
         for symbol in FOREX_STANDARD:
             if symbol in trade_state.get("open_positions", {}):
@@ -503,9 +512,7 @@ def scan_market():
             except Exception as e:
                 print(f"FX error {symbol}: {e}")
 
-    # ==============================================================
-    # 🇮🇳 ENGINE 3: INDIAN EQUITIES (15-Minute Breakout Engine)
-    # ==============================================================
+    # 🇮🇳 ENGINE 3: INDIAN EQUITIES 15M
     if trade_state["virtual_balance_inr"] >= 1000.0:
         for symbol in WATCHLIST_STOCKS:
             if symbol in trade_state.get("open_positions", {}):
