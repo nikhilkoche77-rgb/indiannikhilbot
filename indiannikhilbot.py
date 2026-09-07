@@ -1,23 +1,30 @@
 import os
 import json
 import time
+from datetime import datetime
 import requests
 import yfinance as yf
 
-# --- BOT CONFIG ---
+# --- BOT CONFIGURATION ---
 TELEGRAM_TOKEN = "8876905313:AAHWQ8cD9jADvepC4lQE1psRH9WOxxL21qA"
 CHAT_ID = "1345385952"
 DATA_FILE = "trades_data.json"
+LAST_UPDATE_ID = 0
 
-# State persistence: File se load karna
+# Persistent State Manager
 def load_data():
-    default_data = {"virtual_balance": 10000.00, "open_positions": {}}
+    default_data = {
+        "virtual_balance": 10000.00,
+        "initial_capital": 10000.00,
+        "open_positions": {},
+        "trade_history": []
+    }
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"File read error, resetting state: {e}")
+            print(f"State load warning: {e}")
             return default_data
     return default_data
 
@@ -26,13 +33,13 @@ def save_data(data):
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
     except Exception as e:
-        print(f"File save error: {e}")
+        print(f"State save error: {e}")
 
-# Initial state load
 trade_state = load_data()
 
+# 120+ High-Momentum & Liquid Stocks Watchlist
 WATCHLIST = [
-    # ⚡ 1. SCALPING STOCKS (Fast volume, high volatility, low slippage)
+    # ⚡ 1. Scalping (High Liquidity & Fast Turnover)
     "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
     "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
     "IRFC.NS", "RVNL.NS", "SUZLON.NS", "ZOMATO.NS", "PAYTM.NS", "IDEA.NS",
@@ -40,7 +47,7 @@ WATCHLIST = [
     "ASHOKLEY.NS", "GMRINFRA.NS", "ABCAPITAL.NS", "MANAPPURAM.NS", "FEDERALBNK.NS",
     "IOC.NS", "BPCL.NS", "POWERGRID.NS", "NTPC.NS", "RPOWER.NS", "JPPOWER.NS",
 
-    # ⏱️ 2. INTRADAY TRENDING STOCKS (Clean directional 2% to 4% day moves)
+    # ⏱️ 2. Intraday Momentum & Directional Breakouts
     "IFCI.NS", "IREDA.NS", "HUDCO.NS", "NBCC.NS", "RAILTEL.NS", "IRCON.NS",
     "SJVN.NS", "NHPC.NS", "MAZDOCK.NS", "COCHINSHIP.NS", "HAL.NS", "BDL.NS",
     "PATANJALI.NS", "EXIDEIND.NS", "AMARAJABAT.NS", "MOTHERSON.NS", "TATACHEM.NS",
@@ -51,7 +58,7 @@ WATCHLIST = [
     "IOB.NS", "OIL.NS", "GAIL.NS", "DELHIVERY.NS", "NYKAA.NS", "POLICYBZR.NS",
     "JUBLFOOD.NS", "HAVELLS.NS",
 
-    # 📈 3. SWING BREAKOUT STOCKS (Multi-day setups for 5% to 12% moves)
+    # 📈 3. Swing Setups (Consolidation to Expansion)
     "PARAS.NS", "MTARTECH.NS", "DATA-PATTERNS.NS", "KPIGREEN.NS", "BORORENEW.NS",
     "GMDCLTD.NS", "TATAINVEST.NS", "KALYANKJIL.NS", "HBLPOWER.NS", "ENGINERSIN.NS",
     "WAAREEENER.NS", "PREMIERENE.NS", "RITES.NS", "GRSE.NS", "BEML.NS",
@@ -68,20 +75,87 @@ def send_alert(message):
     try:
         requests.post(url, data=payload, timeout=10)
     except Exception as e:
-        print(f"Alert error: {e}")
+        print(f"Telegram API error: {e}")
+
+def generate_performance_report():
+    history = trade_state.get("trade_history", [])
+    total_trades = len(history)
+    
+    if total_trades == 0:
+        return (
+            f"📊 *PERFORMANCE REPORT*\n\n"
+            f"💰 *Current Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
+            f"📂 *Open Trades:* {len(trade_state.get('open_positions', {}))}\n"
+            f"ℹ️ Abhi tak koi trade close nahi hua hai."
+        )
+
+    wins = [t for t in history if t.get("pnl", 0) > 0]
+    losses = [t for t in history if t.get("pnl", 0) <= 0]
+    win_rate = (len(wins) / total_trades) * 100
+    total_pnl = sum([t.get("pnl", 0) for t in history])
+
+    return (
+        f"🏛️ *PERFORMANCE DASHBOARD*\n\n"
+        f"💰 *Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
+        f"📈 *Net P&L:* {'+' if total_pnl >= 0 else ''}₹{total_pnl:.2f}\n"
+        f"🎯 *Win Rate:* {win_rate:.1f}%\n"
+        f"🔢 *Total Trades:* {total_trades} (✅ {len(wins)} Win | ❌ {len(losses)} Loss)\n"
+        f"📂 *Active Open Positions:* {len(trade_state.get('open_positions', {}))}\n\n"
+        f"👉 Commands: `/status` (open positions) | `/eod` (daily summary)"
+    )
+
+def check_telegram_commands():
+    global LAST_UPDATE_ID, trade_state
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={LAST_UPDATE_ID + 1}&timeout=1"
+    try:
+        res = requests.get(url, timeout=3).json()
+        for update in res.get("result", []):
+            LAST_UPDATE_ID = update["update_id"]
+            text = update.get("message", {}).get("text", "").strip().lower()
+
+            if text in ["/report", "report", "/pnl", "pnl"]:
+                send_alert(generate_performance_report())
+            
+            elif text in ["/status", "status"]:
+                positions = trade_state.get("open_positions", {})
+                if not positions:
+                    send_alert("ℹ️ *Status:* Koi bhi open position active nahi hai.")
+                else:
+                    msg = "📋 *ACTIVE OPEN POSITIONS:*\n\n"
+                    for sym, data in positions.items():
+                        msg += (
+                            f"• *{sym}* ({data['style']})\n"
+                            f"  Entry: ₹{data['entry']:.2f} | Qty: {data['qty']}\n"
+                            f"  SL: ₹{data['sl']:.2f} | Target: ₹{data['target']:.2f}\n\n"
+                        )
+                    send_alert(msg)
+
+            elif text in ["/eod", "eod"]:
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                today_trades = [t for t in trade_state.get("trade_history", []) if t.get("date") == today_str]
+                pnl_today = sum([t.get("pnl", 0) for t in today_trades])
+                send_alert(
+                    f"🏁 *EOD SUMMARY ({today_str})*\n\n"
+                    f"🔢 Today Trades: {len(today_trades)}\n"
+                    f"💵 Today P&L: {'+' if pnl_today >= 0 else ''}₹{pnl_today:.2f}\n"
+                    f"💼 Balance: ₹{trade_state['virtual_balance']:.2f}"
+                )
+    except Exception as e:
+        print(f"Command listener warning: {e}")
 
 def classify_trade_style(vol_spike_ratio):
     if vol_spike_ratio >= 4.0:
-        return "⚡ SCALPING (Quick 1:1.5 Move)", 0.012, 0.020
+        return "⚡ SCALPING", 0.012, 0.025
     elif vol_spike_ratio >= 2.5:
-        return "⏱️ INTRADAY (Day Trend)", 0.015, 0.035
+        return "⏱️ INTRADAY", 0.015, 0.035
     else:
-        return "📈 SWING (Hold 1-3 Days)", 0.025, 0.060
+        return "📈 SWING", 0.025, 0.060
 
 def manage_open_positions():
     global trade_state
     closed = []
     positions = trade_state.get("open_positions", {})
+    today_str = datetime.now().strftime("%Y-%m-%d")
     
     for symbol, pos in list(positions.items()):
         try:
@@ -95,43 +169,46 @@ def manage_open_positions():
             entry = pos['entry']
             qty = pos['qty']
             
-            # --- TRAILING STOP LOSS ---
+            # --- Trailing Stop Loss Rule ---
             if pos['type'] == "BUY":
                 if not pos.get('trailed', False) and curr_price >= entry * 1.015:
                     pos['sl'] = entry
                     pos['trailed'] = True
                     save_data(trade_state)
-                    send_alert(
-                        f"🛡️ *TRAILING SL TRIGGERED*\n\n"
-                        f"📌 *Stock:* {symbol}\n"
-                        f"💰 Current Price: ₹{curr_price:.2f}\n"
-                        f"🔒 Stop Loss moved to Entry: ₹{entry:.2f}\n"
-                        f"✅ Zero-risk mode active!"
-                    )
+                    send_alert(f"🛡️ *TRAILING SL ACTIVE:* {symbol} SL moved to entry ₹{entry:.2f}. Trade risk-free!")
 
                 # Target Hit
                 if curr_price >= pos['target']:
                     profit = round((curr_price - entry) * qty, 2)
                     trade_state["virtual_balance"] += (curr_price * qty)
+                    trade_state["trade_history"].append({
+                        "symbol": symbol, "type": "BUY", "entry": entry, "exit": curr_price,
+                        "pnl": profit, "result": "WIN", "style": pos["style"], "date": today_str
+                    })
                     closed.append(symbol)
                     send_alert(
-                        f"🎯 *TARGET HIT! [PROFIT BOOKED]*\n\n"
-                        f"📈 *Stock:* {symbol} ({pos['style']})\n"
-                        f"💰 Exit Price: ₹{curr_price:.2f}\n"
-                        f"💵 Profit: +₹{profit}\n"
-                        f"💼 Total Balance: ₹{trade_state['virtual_balance']:.2f}"
+                        f"🎯 *TARGET HIT!*\n\n"
+                        f"📈 *{symbol}* ({pos['style']})\n"
+                        f"💰 Exit: ₹{curr_price:.2f}\n"
+                        f"💵 P&L: +₹{profit}\n"
+                        f"💼 Demo Balance: ₹{trade_state['virtual_balance']:.2f}"
                     )
-                # SL Hit
+
+                # Stop Loss Hit
                 elif curr_price <= pos['sl']:
                     loss = round((entry - curr_price) * qty, 2)
                     trade_state["virtual_balance"] += (curr_price * qty)
+                    trade_state["trade_history"].append({
+                        "symbol": symbol, "type": "BUY", "entry": entry, "exit": curr_price,
+                        "pnl": -loss, "result": "LOSS", "style": pos["style"], "date": today_str
+                    })
                     closed.append(symbol)
                     send_alert(
                         f"🛑 *STOP LOSS HIT!*\n\n"
-                        f"📉 *Stock:* {symbol} ({pos['style']})\n"
-                        f"💰 Exit Price: ₹{curr_price:.2f}\n"
-                        f"⚠️ Loss: -₹{loss}\n"
-                        f"💼 Total Balance: ₹{trade_state['virtual_balance']:.2f}"
+                        f"📉 *{symbol}*\n"
+                        f"💰 Exit: ₹{curr_price:.2f}\n"
+                        f"⚠️ P&L: -₹{loss}\n"
+                        f"💼 Demo Balance: ₹{trade_state['virtual_balance']:.2f}"
                     )
 
             elif pos['type'] == "SELL":
@@ -139,7 +216,7 @@ def manage_open_positions():
                     pos['sl'] = entry
                     pos['trailed'] = True
                     save_data(trade_state)
-                    send_alert(f"🛡️ *TRAILING SL:* {symbol} Stop Loss entry pe move ho gaya.")
+                    send_alert(f"🛡️ *TRAILING SL:* {symbol} Stop Loss entry pe shift ho gaya.")
 
                 if curr_price <= pos['target']:
                     profit = round((entry - curr_price) * qty, 2)
@@ -157,15 +234,11 @@ def manage_open_positions():
 
     for sym in closed:
         del trade_state["open_positions"][sym]
-    
     if closed:
         save_data(trade_state)
 
 def scan_market():
     global trade_state
-    open_count = len(trade_state.get("open_positions", {}))
-    print(f"\n[{time.strftime('%H:%M:%S')}] Active Positions: {open_count} | Balance: ₹{trade_state['virtual_balance']:.2f}")
-    
     manage_open_positions()
 
     for symbol in WATCHLIST:
@@ -173,7 +246,7 @@ def scan_market():
             continue
 
         try:
-            time.sleep(0.2)
+            time.sleep(0.2)  # Server safe delay
             df = yf.download(tickers=symbol, period="5d", interval="15m", progress=False)
             if df is None or df.empty or len(df) < 25:
                 continue
@@ -193,15 +266,16 @@ def scan_market():
 
             vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 1.0
 
+            # 2x Volume Burst Filter
             if vol_ratio >= 2.0:
                 style_name, sl_pct, tgt_pct = classify_trade_style(vol_ratio)
                 
+                # Max 25% demo capital per position (Risk management)
                 trade_fund = min(2500.0, trade_state["virtual_balance"])
                 qty = int(trade_fund // curr_close)
                 if qty < 1:
                     continue
 
-                # BUY
                 if curr_close > high_20:
                     sl = round(curr_close * (1 - sl_pct), 2)
                     tgt = round(curr_close * (1 + tgt_pct), 2)
@@ -214,50 +288,33 @@ def scan_market():
                     save_data(trade_state)
 
                     send_alert(
-                        f"🚀 *DEMO TRADE ENTRY: BUY*\n\n"
+                        f"🚀 *INSTITUTIONAL BREAKOUT ENTRY*\n\n"
                         f"📊 *Type:* {style_name}\n"
                         f"📈 *Stock:* {symbol}\n"
                         f"💵 *Entry:* ₹{curr_close:.2f} | *Qty:* {qty}\n"
-                        f"🔥 *Volume:* {vol_ratio:.1f}x Spike\n"
-                        f"🎯 *Target:* ₹{tgt}\n"
-                        f"🛑 *Initial SL:* ₹{sl}\n"
-                        f"💼 Balance Rem: ₹{trade_state['virtual_balance']:.2f}"
-                    )
-
-                # SELL / SHORT
-                elif curr_close < low_20:
-                    sl = round(curr_close * (1 + sl_pct), 2)
-                    tgt = round(curr_close * (1 - tgt_pct), 2)
-                    
-                    trade_state["open_positions"][symbol] = {
-                        'type': 'SELL', 'entry': curr_close, 'qty': qty,
-                        'sl': sl, 'target': tgt, 'style': style_name, 'trailed': False
-                    }
-                    save_data(trade_state)
-
-                    send_alert(
-                        f"🔻 *DEMO TRADE ENTRY: SELL/SHORT*\n\n"
-                        f"📊 *Type:* {style_name}\n"
-                        f"📉 *Stock:* {symbol}\n"
-                        f"💵 *Entry:* ₹{curr_close:.2f} | *Qty:* {qty}\n"
-                        f"🔥 *Volume:* {vol_ratio:.1f}x Panic Selling\n"
+                        f"🔥 *Relative Volume (RVOL):* {vol_ratio:.1f}x Surge\n"
                         f"🎯 *Target:* ₹{tgt}\n"
                         f"🛑 *SL:* ₹{sl}\n"
-                        f"💼 Balance: ₹{trade_state['virtual_balance']:.2f}"
+                        f"💼 Rem. Balance: ₹{trade_state['virtual_balance']:.2f}\n\n"
+                        f"👉 Reply `/status` for active trades or `/report` for P&L."
                     )
 
         except Exception as e:
-            print(f"Error checking {symbol}: {e}")
+            print(f"Scan error {symbol}: {e}")
 
 # Startup Notification
 open_cnt = len(trade_state.get("open_positions", {}))
 send_alert(
     f"🤖 *Paper Trading Bot Live!*\n\n"
     f"💰 *Current Demo Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
-    f"📂 *Resumed Active Trades:* {open_cnt}\n"
-    f"💾 *State Engine:* Persistent file auto-save enabled."
+    f"📂 *Active Open Trades:* {open_cnt}\n"
+    f"📱 *Commands Active:* `/status`, `/report`, `/eod`\n"
+    f"📡 120 Stocks scanning in background..."
 )
 
+# Main Loop (Every 5 minutes + periodic command listener)
 while True:
     scan_market()
-    time.sleep(300)
+    for _ in range(30):
+        check_telegram_commands()
+        time.sleep(10)
