@@ -6,10 +6,29 @@ import yfinance as yf
 TELEGRAM_TOKEN = "8876905313:AAHWQ8cD9jADvepC4lQE1psRH9WOxxL21qA"
 CHAT_ID = "1345385952"
 
-# TATAMOTORS hata diya hai aur reliable high-momentum stocks add kiye hain
+# Small Capital Ko Fast Grow Karne Wale High-Momentum Stocks
 WATCHLIST = [
-    "IFCI.NS", "PFC.NS", "PATANJALI.NS", "TATASTEEL.NS", 
-    "BEL.NS", "BHEL.NS", "RELIANCE.NS", "SBIN.NS", "NTPC.NS"
+    # ⚡ Super High Momentum PSU & Power (Big Moves)
+    "IFCI.NS", "PFC.NS", "RECLTD.NS", "IREDA.NS", "SJVN.NS", "NHPC.NS", 
+    "BHEL.NS", "BEL.NS", "HUDCO.NS", "NBCC.NS", "IRFC.NS", "RVNL.NS", 
+    "RAILTEL.NS", "IRCON.NS", "RITES.NS", "MAZDOCK.NS", "COCHINSHIP.NS",
+
+    # 🚀 High Beta Volatility (Penny to Midcap Movers)
+    "SUZLON.NS", "RPOWER.NS", "JPPOWER.NS", "IDEA.NS", "YESBANK.NS", 
+    "PATANJALI.NS", "GMRINFRA.NS", "IDFCFIRSTB.NS", "PNB.NS", "UNIONBANK.NS",
+    "BANKINDIA.NS", "CENTRALBK.NS", "UCOBANK.NS", "IOB.NS",
+
+    # 🔥 Metals & Energy
+    "TATASTEEL.NS", "SAIL.NS", "NMDC.NS", "NATIONALUM.NS", "HINDALCO.NS", 
+    "JINDALSTEL.NS", "VEDL.NS", "COALINDIA.NS", "ONGC.NS", "OIL.NS",
+
+    # 📈 High-Volume Midcaps & New-Age
+    "ZOMATO.NS", "PAYTM.NS", "NYKAA.NS", "DELHIVERY.NS", "POLICYBZR.NS",
+    "MOTHERSON.NS", "TATACHEM.NS", "ASHOKLEY.NS", "EXIDEIND.NS",
+
+    # 🎯 Fast Swing Financials
+    "ABCAPITAL.NS", "MANAPPURAM.NS", "MUTHOOTFIN.NS", "CANBK.NS", "BANDHANBNK.NS",
+    "FEDERALBNK.NS", "POONAWALLA.NS", "L&TFH.NS", "CHOLAFIN.NS"
 ]
 
 def send_alert(message):
@@ -21,17 +40,15 @@ def send_alert(message):
         print(f"Alert error: {e}")
 
 def scan_market():
-    print(f"[{time.strftime('%H:%M:%S')}] Scanning watchlist for Big Moves...")
+    print(f"\n[{time.strftime('%H:%M:%S')}] Scanning {len(WATCHLIST)} High-Momentum Stocks...")
     for symbol in WATCHLIST:
         try:
-            # 15-minute candles fetch karna
+            time.sleep(0.2)  # Server safe delay
             df = yf.download(tickers=symbol, period="5d", interval="15m", progress=False)
             
-            # Data validation (Render error rokne ke liye)
             if df is None or df.empty or len(df) < 25:
                 continue
 
-            # Multi-index column fix
             if hasattr(df.columns, 'levels'):
                 df.columns = [col[0] for col in df.columns]
 
@@ -46,13 +63,13 @@ def scan_market():
             high_20 = float(df['High_20'].iloc[-1])
             low_20 = float(df['Low_20'].iloc[-1])
 
-            # Volume 2x spike condition
+            # 2x Volume Burst
             is_volume_spike = curr_vol > (avg_vol * 2.0)
 
             # 1. BIG BULLISH BREAKOUT
             if curr_close > high_20 and is_volume_spike:
-                sl = round(curr_close * 0.985, 2)       # 1.5% SL
-                tgt = round(curr_close * 1.04, 2)       # 4% Target
+                sl = round(curr_close * 0.985, 2)
+                tgt = round(curr_close * 1.04, 2)
                 
                 msg = (
                     f"🚀 *BIG BULLISH BREAKOUT!*\n\n"
@@ -61,12 +78,12 @@ def scan_market():
                     f"📊 *Volume:* {round(curr_vol/avg_vol, 1)}x Spike!\n"
                     f"🎯 *Target:* ₹{tgt}\n"
                     f"🛑 *SL:* ₹{sl}\n\n"
-                    f"👉 Groww app me chart check karein!"
+                    f"👉 Groww app me check karein!"
                 )
                 send_alert(msg)
                 print(f"Alert sent for {symbol} (BUY)")
 
-            # 2. BIG CRASH / BREAKDOWN
+            # 2. BIG BREAKDOWN / CRASH
             elif curr_close < low_20 and is_volume_spike:
                 sl = round(curr_close * 1.015, 2)
                 tgt = round(curr_close * 0.96, 2)
@@ -87,9 +104,9 @@ def scan_market():
             print(f"Error checking {symbol}: {e}")
 
 # Startup alert
-send_alert("✅ *Breakout Bot Online!* Cloud service par live scan shuru ho chuka hai.")
+send_alert(f"✅ *Scanner Active!* Ab {len(WATCHLIST)} High-Momentum stocks track ho rahe hain.")
 
-# Continuous scan har 5 minute mein
+# 5-minute loop
 while True:
     scan_market()
     time.sleep(300)
