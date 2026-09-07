@@ -23,7 +23,7 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- STATE LOADER WITH YOUR ACTIVE TRADES RESTORED ---
+# --- STATE LOADER WITH RESTORED TRADES & DYNAMIC TRAILING FIELDS ---
 def load_data():
     default_data = {
         "virtual_balance": 175.89,
@@ -36,7 +36,7 @@ def load_data():
                 "sl": 174.54,
                 "target": 183.40,
                 "style": "🎯 INTRADAY",
-                "trailed": False
+                "trailed_level": 0
             },
             "INOXWIND.NS": {
                 "type": "BUY",
@@ -45,7 +45,7 @@ def load_data():
                 "sl": 74.57,
                 "target": 78.36,
                 "style": "🎯 INTRADAY",
-                "trailed": False
+                "trailed_level": 0
             },
             "NYKAA.NS": {
                 "type": "BUY",
@@ -54,7 +54,7 @@ def load_data():
                 "sl": 331.55,
                 "target": 348.38,
                 "style": "🎯 INTRADAY",
-                "trailed": False
+                "trailed_level": 0
             },
             "JPPOWER.NS": {
                 "type": "BUY",
@@ -63,7 +63,7 @@ def load_data():
                 "sl": 16.78,
                 "target": 17.64,
                 "style": "🎯 INTRADAY",
-                "trailed": False
+                "trailed_level": 0
             }
         },
         "trade_history": []
@@ -167,7 +167,9 @@ def handle_callback(query_id, data):
         else:
             msg = "📊 *LIVE TERMINAL: ACTIVE POSITIONS*\n\n"
             for sym, d in positions.items():
-                msg += f"• *{sym}* ({d['style']})\n  Qty: {d['qty']} | Entry: ₹{d['entry']:.2f}\n  SL: ₹{d['sl']:.2f} | Tgt: ₹{d['target']:.2f}\n\n"
+                level = d.get('trailed_level', 0)
+                trail_info = "Cost Locked" if level == 1 else (f"Level {level} Locked" if level > 1 else "Initial SL")
+                msg += f"• *{sym}* ({d['style']})\n  Qty: {d['qty']} | Entry: ₹{d['entry']:.2f}\n  SL: ₹{d['sl']:.2f} ({trail_info}) | Tgt: ₹{d['target']:.2f}\n\n"
             send_menu(msg)
 
     elif data == "btn_wallets":
@@ -198,7 +200,7 @@ def handle_callback(query_id, data):
             )
 
     elif data == "btn_sync":
-        send_alert("🔄 *Syncing Market Data...* Live scan triggered.")
+        send_alert("🔄 *Syncing Market Data...* Live scan running.")
         threading.Thread(target=scan_market).start()
 
     elif data == "btn_breakdown":
@@ -214,11 +216,11 @@ def handle_callback(query_id, data):
 
     elif data == "btn_pause":
         BOT_PAUSED = True
-        send_menu("⏸️ *SCANNER PAUSED*\nNaye breakout alerts temporary band hain.")
+        send_menu("⏸️ *SCANNER PAUSED*\nNaye alerts band hain.")
 
     elif data == "btn_resume":
         BOT_PAUSED = False
-        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning fir se active ho gayi hai.")
+        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning live shuru ho gayi.")
 
     elif data == "btn_panic":
         positions = list(trade_state.get("open_positions", {}).items())
@@ -235,7 +237,7 @@ def handle_callback(query_id, data):
             })
             del trade_state["open_positions"][sym]
         save_data(trade_state)
-        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaari positions close kar di gayi hain.")
+        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaare positions square-off kar diye gaye hain.")
 
 def fast_telegram_listener():
     global LAST_UPDATE_ID
@@ -263,6 +265,7 @@ def classify_trade_style(vol_spike_ratio):
     else:
         return "🏔️ SWING", 0.025, 0.060
 
+# --- CONTINUOUS AUTO-TRAILING LOGIC ---
 def manage_open_positions():
     global trade_state
     closed = []
@@ -280,15 +283,32 @@ def manage_open_positions():
             curr_price = float(df['Close'].iloc[-1])
             entry = pos['entry']
             qty = pos['qty']
-            
-            if pos['type'] == "BUY":
-                # Trailing SL Trigger (+1.5% move par safe)
-                if not pos.get('trailed', False) and curr_price >= entry * 1.015:
-                    pos['sl'] = entry
-                    pos['trailed'] = True
-                    save_data(trade_state)
-                    send_alert(f"🛡️ *TRAILING SL ACTIVE:* {symbol} SL moved to cost ₹{entry:.2f}. Zero risk locked!")
+            gain_pct = ((curr_price - entry) / entry) * 100
+            current_level = pos.get('trailed_level', 0)
 
+            if pos['type'] == "BUY":
+                # Level 1: +1.2% Gain -> SL shifts to Cost (Entry Price)
+                if current_level < 1 and gain_pct >= 1.2:
+                    pos['sl'] = round(entry, 2)
+                    pos['trailed_level'] = 1
+                    save_data(trade_state)
+                    send_alert(f"🛡️ *AUTO-TRAILING LEVEL 1:* {symbol}\nGain: +{gain_pct:.2f}%\nSL locked to Cost: ₹{entry:.2f} (Zero Risk Locked!)")
+
+                # Level 2: +2.0% Gain -> SL locks +0.8% Profit
+                elif current_level < 2 and gain_pct >= 2.0:
+                    pos['sl'] = round(entry * 1.008, 2)
+                    pos['trailed_level'] = 2
+                    save_data(trade_state)
+                    send_alert(f"🚀 *AUTO-TRAILING LEVEL 2:* {symbol}\nGain: +{gain_pct:.2f}%\nSL moved to Profit: ₹{pos['sl']:.2f} (+0.8% profit safe!)")
+
+                # Level 3: +2.8% Gain -> SL locks +1.6% Profit
+                elif current_level < 3 and gain_pct >= 2.8:
+                    pos['sl'] = round(entry * 1.016, 2)
+                    pos['trailed_level'] = 3
+                    save_data(trade_state)
+                    send_alert(f"🔥 *AUTO-TRAILING LEVEL 3:* {symbol}\nGain: +{gain_pct:.2f}%\nSL moved to Profit: ₹{pos['sl']:.2f} (+1.6% profit safe!)")
+
+                # Target Hit Execution
                 if curr_price >= pos['target']:
                     profit = round((curr_price - entry) * qty, 2)
                     trade_state["virtual_balance"] += (curr_price * qty)
@@ -299,15 +319,18 @@ def manage_open_positions():
                     closed.append(symbol)
                     send_alert(f"🎯 *TARGET HIT!*\n\n📈 *{symbol}* ({pos['style']})\nExit: ₹{curr_price:.2f} | Profit: +₹{profit}\nBalance: ₹{trade_state['virtual_balance']:.2f}")
 
+                # Trailed SL Hit Execution
                 elif curr_price <= pos['sl']:
-                    loss = round((entry - curr_price) * qty, 2)
+                    pnl = round((curr_price - entry) * qty, 2)
+                    outcome = "WIN" if pnl >= 0 else "LOSS"
                     trade_state["virtual_balance"] += (curr_price * qty)
                     trade_state["trade_history"].append({
                         "symbol": symbol, "type": "BUY", "entry": entry, "exit": curr_price,
-                        "pnl": -loss, "result": "LOSS", "style": pos["style"], "date": today_str
+                        "pnl": pnl, "result": outcome, "style": pos["style"], "date": today_str
                     })
                     closed.append(symbol)
-                    send_alert(f"🛑 *STOP LOSS HIT!*\n\n📉 *{symbol}*\nExit: ₹{curr_price:.2f} | Loss: -₹{loss}\nBalance: ₹{trade_state['virtual_balance']:.2f}")
+                    label = "🛡️ *TRAILING SL HIT (PROFIT SECURED)*" if pnl >= 0 else "🛑 *INITIAL STOP LOSS HIT*"
+                    send_alert(f"{label}\n\n📉 *{symbol}*\nExit: ₹{curr_price:.2f} | P&L: {'+' if pnl >= 0 else ''}₹{pnl:.2f}\nBalance: ₹{trade_state['virtual_balance']:.2f}")
 
         except Exception as e:
             print(f"Tracking error {symbol}: {e}")
@@ -322,15 +345,12 @@ def scan_market():
     if BOT_PAUSED:
         return
 
-    # First track existing trades
     manage_open_positions()
 
-    # GUARD: Agar balance ₹1000 se kam hai toh naye trades mat dhoondo jab tak purana exit na ho
     if trade_state["virtual_balance"] < 1000.0:
         return
 
     for symbol in WATCHLIST:
-        # STRICT DUPLICATE GUARD: Ek stock me do baar trade nahi lagega
         if symbol in trade_state.get("open_positions", {}):
             continue
 
@@ -367,7 +387,7 @@ def scan_market():
                 
                 trade_state["open_positions"][symbol] = {
                     'type': 'BUY', 'entry': curr_close, 'qty': qty,
-                    'sl': sl, 'target': tgt, 'style': style_name, 'trailed': False
+                    'sl': sl, 'target': tgt, 'style': style_name, 'trailed_level': 0
                 }
                 save_data(trade_state)
 
@@ -385,20 +405,18 @@ def scan_market():
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
 
-# Startup Notification
 active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *INSTITUTIONAL TERMINAL ONLINE*\n\n"
+    f"🎛️ *DYNAMIC TRAILING TERMINAL ACTIVE*\n\n"
     f"💰 *Demo Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
-    f"📂 *Active Restored Trades:* {active_cnt}\n\n"
+    f"📂 *Active Restored Trades:* {active_cnt}\n"
+    f"🛡️ Multi-Level Auto-Trailing: Enabled (+1.2%, +2.0%, +2.8%)\n\n"
     f"Neeche buttons se terminal monitor karein:"
 )
 
-# Multi-threaded fast listener start
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
 listener_thread.start()
 
-# Main Loop
 while True:
     scan_market()
     time.sleep(120)
