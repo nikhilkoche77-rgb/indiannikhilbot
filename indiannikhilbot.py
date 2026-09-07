@@ -6,7 +6,7 @@ from datetime import datetime
 import requests
 import yfinance as yf
 
-# --- BOT CONFIGURATION ---
+# --- BOT CREDENTIALS ---
 TELEGRAM_TOKEN = "8876905313:AAHWQ8cD9jADvepC4lQE1psRH9WOxxL21qA"
 CHAT_ID = "1345385952"
 DATA_FILE = "trades_data.json"
@@ -25,7 +25,7 @@ def send_alert(message):
         print(f"Telegram API error: {e}")
         return None
 
-# --- TELEGRAM CLOUD STORAGE ---
+# --- TELEGRAM CLOUD SYNC ENGINE ---
 def sync_state_to_telegram(state):
     payload_str = json.dumps(state)
     msg = f"{SYNC_TAG}\n`{payload_str}`"
@@ -50,9 +50,10 @@ def restore_state_from_telegram():
             text = update.get("message", {}).get("text", "")
             if SYNC_TAG in text:
                 json_part = text.replace(SYNC_TAG, "").strip().strip("`")
+                print("State recovered from Telegram Cloud.")
                 return json.loads(json_part)
     except Exception as e:
-        print(f"Cloud restore failed: {e}")
+        print(f"Cloud restore fallback: {e}")
 
     if os.path.exists(DATA_FILE):
         try:
@@ -67,22 +68,19 @@ def save_data(data):
         with open(DATA_FILE, "w") as f:
             json.dump(data, f, indent=4)
     except Exception as e:
-        print(f"Local save error: {e}")
+        print(f"File save error: {e}")
     sync_state_to_telegram(data)
 
 trade_state = restore_state_from_telegram()
 
 # 165 Institutional Momentum, Scalping & Swing Watchlist
 WATCHLIST = [
-    # ⚡ 1. High Liquidity & Fast Scalping (PSU, Metals & Volume Heavyweights)
     "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
     "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
     "IRFC.NS", "RVNL.NS", "SUZLON.NS", "ZOMATO.NS", "PAYTM.NS", "IDEA.NS",
     "YESBANK.NS", "PNB.NS", "BANKBARODA.NS", "CANBK.NS", "UNIONBANK.NS", "IDFCFIRSTB.NS",
     "ASHOKLEY.NS", "GMRINFRA.NS", "ABCAPITAL.NS", "MANAPPURAM.NS", "FEDERALBNK.NS",
     "IOC.NS", "BPCL.NS", "POWERGRID.NS", "NTPC.NS", "RPOWER.NS", "JPPOWER.NS",
-
-    # ⏱️ 2. Intraday Momentum & Power Breakouts (Railways, Defense, Green Power)
     "IFCI.NS", "IREDA.NS", "HUDCO.NS", "NBCC.NS", "RAILTEL.NS", "IRCON.NS",
     "SJVN.NS", "NHPC.NS", "MAZDOCK.NS", "COCHINSHIP.NS", "HAL.NS", "BDL.NS",
     "PATANJALI.NS", "EXIDEIND.NS", "AMARAJABAT.NS", "MOTHERSON.NS", "TATACHEM.NS",
@@ -91,30 +89,23 @@ WATCHLIST = [
     "DLF.NS", "GODREJPROP.NS", "CHOLAFIN.NS", "POONAWALLA.NS", "L&TFH.NS",
     "MUTHOOTFIN.NS", "BANDHANBNK.NS", "UCOBANK.NS", "CENTRALBK.NS", "BANKINDIA.NS",
     "IOB.NS", "OIL.NS", "GAIL.NS", "DELHIVERY.NS", "NYKAA.NS", "POLICYBZR.NS",
-    "JUBLFOOD.NS", "HAVELLS.NS", "TVSMOTOR.NS", "HEROMOTOCO.NS",
-
-    # 📈 3. Swing & Expansion (Defense Tech, High-Beta Midcaps & Solar)
-    "PARAS.NS", "MTARTECH.NS", "DATA-PATTERNS.NS", "KPIGREEN.NS", "BORORENEW.NS",
-    "GMDCLTD.NS", "TATAINVEST.NS", "KALYANKJIL.NS", "HBLPOWER.NS", "ENGINERSIN.NS",
-    "WAAREEENER.NS", "PREMIERENE.NS", "RITES.NS", "GRSE.NS", "BEML.NS",
-    "ASTRAL.NS", "POLYCAB.NS", "KEI.NS", "DIXON.NS", "KAYNES.NS",
-    "PERSISTENT.NS", "COFORGE.NS", "MPHASIS.NS", "TITAN.NS", "TRENT.NS",
-    "DMART.NS", "APOLLOTYRE.NS", "MRF.NS", "BALKRISIND.NS", "ESCORTS.NS",
-    "DEEPAKNTR.NS", "TATAELXSI.NS", "CLEAN.NS", "FINEORG.NS", "AETHER.NS",
-    "SUVENPHAR.NS", "NATCOPHARM.NS", "GLENMARK.NS", "LUPIN.NS", "AUROPHARMA.NS",
-
-    # 🚀 4. Infra, Energy & Turnaround Midcaps
-    "PRESTIGE.NS", "OBEROIRLTY.NS", "PHOENIXLTD.NS", "SUNTECK.NS", "NCC.NS",
-    "HFCL.NS", "TEJASNET.NS", "KEC.NS", "KALPATPOWR.NS", "CESC.NS",
-    "TORNTPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "INOXWIND.NS",
-
-    # 🛡️ 5. Fresh Momentum Additions (High Volatility Movers)
-    "TITAGARH.NS", "TEXRAIL.NS", "JWL.NS", "ZENITHEXPO.NS", "ASTERDM.NS",
-    "APLAPOLLO.NS", "CGPOWER.NS", "SUNDRMFAST.NS", "SCHNEIDER.NS", "TRITURBINE.NS",
-    "THERMAX.NS", "PRAJIND.NS", "ELECON.NS", "KIRLOSENG.NS", "CUMMINSIND.NS",
-    "MAHINDCIE.NS", "SONACOMS.NS", "UNOMINDA.NS", "SUPRAJIT.NS", "RADICO.NS",
-    "TIINDIA.NS", "JBCHEPHARM.NS", "ERIS.NS", "AJANTPHARM.NS", "SYNGENE.NS",
-    "CHAMBLFERT.NS", "COROMANDEL.NS", "GNFC.NS", "GSFC.NS", "FACT.NS"
+    "JUBLFOOD.NS", "HAVELLS.NS", "TVSMOTOR.NS", "HEROMOTOCO.NS", "PARAS.NS",
+    "MTARTECH.NS", "DATA-PATTERNS.NS", "KPIGREEN.NS", "BORORENEW.NS", "GMDCLTD.NS",
+    "TATAINVEST.NS", "KALYANKJIL.NS", "HBLPOWER.NS", "ENGINERSIN.NS", "WAAREEENER.NS",
+    "PREMIERENE.NS", "RITES.NS", "GRSE.NS", "BEML.NS", "ASTRAL.NS", "POLYCAB.NS",
+    "KEI.NS", "DIXON.NS", "KAYNES.NS", "PERSISTENT.NS", "COFORGE.NS", "MPHASIS.NS",
+    "TITAN.NS", "TRENT.NS", "DMART.NS", "APOLLOTYRE.NS", "MRF.NS", "BALKRISIND.NS",
+    "ESCORTS.NS", "DEEPAKNTR.NS", "TATAELXSI.NS", "CLEAN.NS", "FINEORG.NS",
+    "AETHER.NS", "SUVENPHAR.NS", "NATCOPHARM.NS", "GLENMARK.NS", "LUPIN.NS",
+    "AUROPHARMA.NS", "PRESTIGE.NS", "OBEROIRLTY.NS", "PHOENIXLTD.NS", "SUNTECK.NS",
+    "NCC.NS", "HFCL.NS", "TEJASNET.NS", "KEC.NS", "KALPATPOWR.NS", "CESC.NS",
+    "TORNTPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "INOXWIND.NS", "TITAGARH.NS",
+    "TEXRAIL.NS", "JWL.NS", "ZENITHEXPO.NS", "ASTERDM.NS", "APLAPOLLO.NS",
+    "CGPOWER.NS", "SUNDRMFAST.NS", "SCHNEIDER.NS", "TRITURBINE.NS", "THERMAX.NS",
+    "PRAJIND.NS", "ELECON.NS", "KIRLOSENG.NS", "CUMMINSIND.NS", "MAHINDCIE.NS",
+    "SONACOMS.NS", "UNOMINDA.NS", "SUPRAJIT.NS", "RADICO.NS", "TIINDIA.NS",
+    "JBCHEPHARM.NS", "ERIS.NS", "AJANTPHARM.NS", "SYNGENE.NS", "CHAMBLFERT.NS",
+    "COROMANDEL.NS", "GNFC.NS", "GSFC.NS", "FACT.NS"
 ]
 
 def send_menu(text):
@@ -208,11 +199,11 @@ def handle_callback(query_id, data):
 
     elif data == "btn_pause":
         BOT_PAUSED = True
-        send_menu("⏸️ *SCANNER PAUSED*\nNaye breakout alerts temporary stop kar diye gaye hain.")
+        send_menu("⏸️ *SCANNER PAUSED*\nNaye breakout alerts temporary band hain.")
 
     elif data == "btn_resume":
         BOT_PAUSED = False
-        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning fir se active ho gayi hai.")
+        send_menu("▶️ *SCANNER RESUMED*\nWatchlist scanning live shuru ho gayi.")
 
     elif data == "btn_panic":
         positions = list(trade_state.get("open_positions", {}).items())
@@ -229,9 +220,8 @@ def handle_callback(query_id, data):
             })
             del trade_state["open_positions"][sym]
         save_data(trade_state)
-        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaare positions square-off kar diye gaye hain.")
+        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaari positions close kar di gayi hain.")
 
-# Background thread dedicated to instant button responses
 def fast_telegram_listener():
     global LAST_UPDATE_ID
     while True:
@@ -249,7 +239,7 @@ def fast_telegram_listener():
                     if not text.startswith(SYNC_TAG):
                         send_menu("🎛️ *COMMAND TERMINAL ACTIVE*\nButtons se direct operate karein:")
         except Exception as e:
-            print(f"Listener error: {e}")
+            print(f"Listener warning: {e}")
         time.sleep(0.5)
 
 def classify_trade_style(vol_spike_ratio):
@@ -335,7 +325,6 @@ def scan_market():
 
             df['Vol_Avg'] = df['Volume'].rolling(window=20).mean()
             df['High_20'] = df['High'].shift(1).rolling(window=20).max()
-            df['Low_20'] = df['Low'].shift(1).rolling(window=20).min()
 
             curr_close = float(df['Close'].iloc[-1])
             curr_vol = float(df['Volume'].iloc[-1])
@@ -376,16 +365,17 @@ def scan_market():
         except Exception as e:
             print(f"Scan error {symbol}: {e}")
 
-# Startup Notification
+# Startup Menu Broadcast
 active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *LIGHTNING FAST TERMINAL ONLINE*\n\n"
+    f"🎛️ *INSTITUTIONAL PAPER TERMINAL READY*\n\n"
     f"💰 *Demo Balance:* ₹{trade_state['virtual_balance']:.2f}\n"
-    f"📂 *Active Trades:* {active_cnt}\n\n"
-    f"Buttons ab instant respond karenge:"
+    f"📂 *Active Restored Trades:* {active_cnt}\n"
+    f"📡 165 Stocks Monitoring 24/7\n\n"
+    f"Terminal aur performance live check karne ke liye buttons use karein:"
 )
 
-# Start fast listener in dedicated parallel thread
+# Start multi-threaded Telegram listener
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
 listener_thread.start()
 
