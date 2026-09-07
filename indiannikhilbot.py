@@ -146,10 +146,9 @@ def handle_callback(query_id, data):
     global trade_state, BOT_PAUSED
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery", data={"callback_query_id": query_id})
 
-    # --- SEPARATED LIVE TERMINAL (INDIAN & FOREX DISTINCT CARDS) ---
+    # --- SEPARATED LIVE TERMINAL ---
     if data == "btn_terminal":
         positions = trade_state.get("open_positions", {})
-        
         inr_positions = {k: v for k, v in positions.items() if not is_forex_or_crypto(k)}
         fx_positions = {k: v for k, v in positions.items() if is_forex_or_crypto(k)}
 
@@ -166,11 +165,10 @@ def handle_callback(query_id, data):
                 msg += (
                     f"• *{clean}* ({d['style']})\n"
                     f"  Qty: `{d['qty']}` | Entry: `₹{d['entry']:.2f}`\n"
-                    f"  SL: `₹{d['sl']:.2f}` ({trail_tag})\n"
-                    f"  Tgt: `₹{d['target']:.2f}`\n\n"
+                    f"  SL: `₹{d['sl']:.2f}` ({trail_tag}) | Tgt: `₹{d['target']:.2f}`\n\n"
                 )
         else:
-            msg += "_(Koi Indian position active nahi hai)_\n\n"
+            msg += "_(No active Indian positions)_\n\n"
 
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
 
@@ -184,11 +182,10 @@ def handle_callback(query_id, data):
                 msg += (
                     f"• *{clean}* ({d['style']})\n"
                     f"  Lot: `{d['qty']}` | Entry: `${d['entry']:.4f}`\n"
-                    f"  SL: `${d['sl']:.4f}` ({trail_tag})\n"
-                    f"  TP: `${d['target']:.4f}`\n\n"
+                    f"  SL: `${d['sl']:.4f}` ({trail_tag}) | TP: `${d['target']:.4f}`\n\n"
                 )
         else:
-            msg += "_(Koi Forex/Crypto position active nahi hai)_\n"
+            msg += "_(No active Forex/Crypto positions)_\n"
 
         send_menu(msg)
 
@@ -212,41 +209,72 @@ def handle_callback(query_id, data):
             f"• Total Equity: ${(usd_cash + usd_alloc):.2f} USD"
         )
 
+    # --- SEPARATED TOTAL PERFORMANCE AUDIT ---
     elif data == "btn_performance":
         history = trade_state.get("trade_history", [])
-        total = len(history)
-        if total == 0:
-            send_menu("📈 *PERFORMANCE*\n\nAbhi tak koi trade close nahi hua hai.")
-        else:
-            wins = [t for t in history if t.get("pnl", 0) > 0]
-            losses = [t for t in history if t.get("pnl", 0) <= 0]
-            win_rate = (len(wins) / total) * 100
-            pnl_inr = sum([t.get("pnl", 0) for t in history if t.get("currency") == "INR"])
-            pnl_usd = sum([t.get("pnl", 0) for t in history if t.get("currency") == "USD"])
+        
+        inr_history = [t for t in history if t.get("currency") == "INR"]
+        usd_history = [t for t in history if t.get("currency") == "USD"]
 
-            send_menu(
-                f"📈 *TOTAL PERFORMANCE AUDIT*\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🎯 Win Rate: *{win_rate:.1f}%* ({len(wins)}W | {len(losses)}L)\n"
-                f"🇮🇳 Indian Equities P&L: *{'+' if pnl_inr >= 0 else ''}₹{pnl_inr:.2f}*\n"
-                f"🌐 Forex/Crypto P&L: *{'+' if pnl_usd >= 0 else ''}${pnl_usd:.2f} USD*"
-            )
+        inr_wins = [t for t in inr_history if t.get("pnl", 0) > 0]
+        inr_loss = [t for t in inr_history if t.get("pnl", 0) <= 0]
+        inr_rate = (len(inr_wins) / len(inr_history) * 100) if inr_history else 0.0
+        inr_pnl = sum([t.get("pnl", 0) for t in inr_history])
+
+        usd_wins = [t for t in usd_history if t.get("pnl", 0) > 0]
+        usd_loss = [t for t in usd_history if t.get("pnl", 0) <= 0]
+        usd_rate = (len(usd_wins) / len(usd_history) * 100) if usd_history else 0.0
+        usd_pnl = sum([t.get("pnl", 0) for t in usd_history])
+
+        msg = (
+            f"📈 *TOTAL PORTFOLIO PERFORMANCE*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🇮🇳 *INDIAN EQUITIES (₹10,000 Pool):*\n"
+            f"• Total Trades: `{len(inr_history)}` (✅ {len(inr_wins)}W | ❌ {len(inr_loss)}L)\n"
+            f"• Win Rate: *{inr_rate:.1f}%*\n"
+            f"• Realized P&L: *{'+' if inr_pnl >= 0 else ''}₹{inr_pnl:.2f}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌐 *FOREX / CRYPTO (VANTAGE/XM $100 Pool):*\n"
+            f"• Total Trades: `{len(usd_history)}` (✅ {len(usd_wins)}W | ❌ {len(usd_loss)}L)\n"
+            f"• Win Rate: *{usd_rate:.1f}%*\n"
+            f"• Realized P&L: *{'+' if usd_pnl >= 0 else ''}${usd_pnl:.2f} USD*"
+        )
+        send_menu(msg)
 
     elif data == "btn_sync":
         send_alert("🔄 *Scanning Markets (5m Scalp + 15m Equities)...*")
         threading.Thread(target=scan_market).start()
 
+    # --- SEPARATED TODAY'S BREAKDOWN ---
     elif data == "btn_breakdown":
         today_str = datetime.now().strftime("%Y-%m-%d")
         today_trades = [t for t in trade_state.get("trade_history", []) if t.get("date") == today_str]
-        pnl_inr = sum([t.get("pnl", 0) for t in today_trades if t.get("currency") == "INR"])
-        pnl_usd = sum([t.get("pnl", 0) for t in today_trades if t.get("currency") == "USD"])
-        send_menu(
-            f"📋 *TODAY'S BREAKDOWN ({today_str})*\n\n"
-            f"Total Trades: {len(today_trades)}\n"
-            f"🇮🇳 INR Day P&L: {'+' if pnl_inr >= 0 else ''}₹{pnl_inr:.2f}\n"
-            f"🌐 USD Day P&L: {'+' if pnl_usd >= 0 else ''}${pnl_usd:.2f} USD"
+
+        today_inr = [t for t in today_trades if t.get("currency") == "INR"]
+        today_usd = [t for t in today_trades if t.get("currency") == "USD"]
+
+        inr_pnl = sum([t.get("pnl", 0) for t in today_inr])
+        inr_wins = len([t for t in today_inr if t.get("pnl", 0) > 0])
+        inr_loss = len([t for t in today_inr if t.get("pnl", 0) <= 0])
+
+        usd_pnl = sum([t.get("pnl", 0) for t in today_usd])
+        usd_wins = len([t for t in today_usd if t.get("pnl", 0) > 0])
+        usd_loss = len([t for t in today_usd if t.get("pnl", 0) <= 0])
+
+        msg = (
+            f"📋 *TODAY'S BREAKDOWN ({today_str})*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🇮🇳 *INDIAN EQUITIES TODAY:*\n"
+            f"• Closed Trades: `{len(today_inr)}` (✅ {inr_wins}W | ❌ {inr_loss}L)\n"
+            f"• Realized P&L: *{'+' if inr_pnl >= 0 else ''}₹{inr_pnl:.2f}*\n"
+            f"• Cash Balance: `₹{trade_state['virtual_balance_inr']:.2f}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌐 *FOREX / CRYPTO TODAY ($100 Pool):*\n"
+            f"• Closed Trades: `{len(today_usd)}` (✅ {usd_wins}W | ❌ {usd_loss}L)\n"
+            f"• Realized P&L: *{'+' if usd_pnl >= 0 else ''}${usd_pnl:.2f} USD*\n"
+            f"• USD Balance: `${trade_state['virtual_balance_usd']:.2f} USD`"
         )
+        send_menu(msg)
 
     elif data == "btn_pause":
         BOT_PAUSED = True
