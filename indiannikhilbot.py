@@ -4,6 +4,7 @@ import time
 import threading
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import yfinance as yf
 
@@ -13,9 +14,8 @@ CHAT_ID = "1345385952"
 DATA_FILE = "trades_data.json"
 LAST_UPDATE_ID = 0
 BOT_PAUSED = False
-
-# Strict Timezone setup for Indian Market
 IST = ZoneInfo("Asia/Kolkata")
+state_lock = threading.Lock()
 
 def send_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -24,13 +24,12 @@ def send_alert(message):
         res = requests.post(url, data=payload, timeout=10)
         return res.json()
     except Exception as e:
-        print(f"Telegram API error: {e}")
+        print(f"Telegram API alert error: {e}")
         return None
 
 # --- MARKET TIMING GATES ---
 def is_indian_market_open():
     now = datetime.now(IST)
-    # Monday = 0, Friday = 4, Saturday = 5, Sunday = 6
     if now.weekday() >= 5:
         return False
     market_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
@@ -40,16 +39,15 @@ def is_indian_market_open():
 def is_forex_market_open():
     now_utc = datetime.now(timezone.utc)
     weekday = now_utc.weekday()
-    # Forex closes Friday 21:00 UTC and opens Sunday 21:00 UTC
-    if weekday == 5: # Saturday
+    if weekday == 5:
         return False
-    if weekday == 4 and now_utc.hour >= 21: # Friday evening
+    if weekday == 4 and now_utc.hour >= 21:
         return False
-    if weekday == 6 and now_utc.hour < 21: # Sunday before open
+    if weekday == 6 and now_utc.hour < 21:
         return False
     return True
 
-# --- DUAL-WALLET STATE LOADER ---
+# --- THREAD-SAFE STATE PERSISTENCE ---
 def load_data():
     default_data = {
         "virtual_balance_inr": 10000.00,
@@ -59,30 +57,27 @@ def load_data():
         "open_positions": {},
         "trade_history": []
     }
-
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 saved = json.load(f)
-                saved["virtual_balance_usd"] = saved.get("virtual_balance_usd", 100.00)
-                if "virtual_balance_inr" not in saved:
-                    saved["virtual_balance_inr"] = saved.get("virtual_balance", 10000.00)
                 return saved
         except Exception:
             pass
     return default_data
 
 def save_data(data):
-    try:
-        with open(DATA_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"File save error: {e}")
+    with state_lock:
+        try:
+            with open(DATA_FILE, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"File save error: {e}")
 
 trade_state = load_data()
 
 SCALP_CRYPTO = ["BTC-USD", "ETH-USD"]
-SCALP_METALS = ["GC=F"] # XAUUSD
+SCALP_METALS = ["GC=F"]
 FOREX_STANDARD = ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X"]
 
 WATCHLIST_STOCKS = [
@@ -144,7 +139,7 @@ def send_menu(text):
                 {"text": "📋 Today Breakdown", "callback_data": "btn_breakdown"}
             ],
             [
-                {"text": "📈 Performance", "callback_data": "btn_performance"},
+                {"text": "📈 Total P&L / Performance", "callback_data": "btn_performance"},
                 {"text": "⏸️ Pause", "callback_data": "btn_pause"},
                 {"text": "▶️ Resume", "callback_data": "btn_resume"}
             ],
@@ -169,7 +164,9 @@ def handle_callback(query_id, data):
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery", data={"callback_query_id": query_id})
 
     if data == "btn_terminal":
-        positions = trade_state.get("open_positions", {})
+        with state_lock:
+            positions = dict(trade_state.get("open_positions", {}))
+
         inr_positions = {k: v for k, v in positions.items() if not is_forex_or_crypto(k)}
         fx_positions = {k: v for k, v in positions.items() if is_forex_or_crypto(k)}
 
@@ -178,12 +175,12 @@ def handle_callback(query_id, data):
         if inr_positions:
             for sym, d in inr_positions.items():
                 level = d.get('trailed_level', 0)
-                trail_tag = "🛡️ Trailed Cost" if level == 1 else "Initial SL"
+                trail_tag = "🛡️ Cost Locked" if level == 1 else "Initial SL"
                 clean = format_clean_symbol(sym)
                 msg += f"• *{clean}* ({d['style']})\n  Qty: `{d['qty']}` | Entry: `₹{d['entry']:.2f}`\n  SL: `₹{d['sl']:.2f}` ({trail_tag}) | Tgt: `₹{d['target']:.2f}`\n\n"
         else:
-            status = "Open" if is_indian_market_open() else "Closed"
-            msg += f"_(Market {status} - No active positions)_\n\n"
+            status = "🟢 OPEN" if is_indian_market_open() else "🔴 CLOSED"
+            msg += f"_(Market: {status} - No active positions)_\n\n"
 
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
         msg += f"🌐 *FOREX / VANTAGE / XM [{len(fx_positions)} Active]*\n"
@@ -199,26 +196,33 @@ def handle_callback(query_id, data):
         send_menu(msg)
 
     elif data == "btn_wallets":
-        inr_cash = trade_state['virtual_balance_inr']
-        usd_cash = trade_state['virtual_balance_usd']
-        inr_alloc = sum([d['entry'] * d['qty'] for sym, d in trade_state.get('open_positions', {}).items() if not is_forex_or_crypto(sym)])
-        usd_alloc = sum([20.0 for sym in trade_state.get('open_positions', {}) if is_forex_or_crypto(sym)])
+        with state_lock:
+            inr_cash = trade_state['virtual_balance_inr']
+            usd_cash = trade_state['virtual_balance_usd']
+            inr_alloc = sum([d['entry'] * d['qty'] for sym, d in trade_state.get('open_positions', {}).items() if not is_forex_or_crypto(sym)])
+            usd_alloc = sum([20.0 for sym in trade_state.get('open_positions', {}) if is_forex_or_crypto(sym)])
 
         send_menu(
             f"💰 *SEPARATED WALLET AUDIT*\n━━━━━━━━━━━━━━━━━━━━\n"
             f"🇮🇳 *INDIAN EQUITIES DEMO POOL:*\n"
-            f"• Available Cash: ₹{inr_cash:.2f}\n"
-            f"• Allocated Margin: ₹{inr_alloc:.2f}\n"
-            f"• Total Portfolio: ₹{(inr_cash + inr_alloc):.2f}\n"
+            f"• Available Cash: `₹{inr_cash:.2f}`\n"
+            f"• In-Trade Allocated: `₹{inr_alloc:.2f}`\n"
+            f"• Total Portfolio: `₹{(inr_cash + inr_alloc):.2f}`\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🌐 *FOREX / VANTAGE / XM DEMO ($100):*\n"
-            f"• Available Cash: ${usd_cash:.2f} USD\n"
-            f"• Active Margin: ${usd_alloc:.2f} USD\n"
-            f"• Total Equity: ${(usd_cash + usd_alloc):.2f} USD"
+            f"• Available Cash: `${usd_cash:.2f} USD`\n"
+            f"• Active Margin: `${usd_alloc:.2f} USD`\n"
+            f"• Total Equity: `${(usd_cash + usd_alloc):.2f} USD`"
         )
 
     elif data == "btn_performance":
-        history = trade_state.get("trade_history", [])
+        with state_lock:
+            history = list(trade_state.get("trade_history", []))
+            inr_cash = trade_state['virtual_balance_inr']
+            usd_cash = trade_state['virtual_balance_usd']
+            inr_init = trade_state.get('initial_capital_inr', 10000.0)
+            usd_init = trade_state.get('initial_capital_usd', 100.0)
+
         inr_history = [t for t in history if t.get("currency") == "INR"]
         usd_history = [t for t in history if t.get("currency") == "USD"]
 
@@ -226,23 +230,27 @@ def handle_callback(query_id, data):
         inr_loss = [t for t in inr_history if t.get("pnl", 0) <= 0]
         inr_rate = (len(inr_wins) / len(inr_history) * 100) if inr_history else 0.0
         inr_pnl = sum([t.get("pnl", 0) for t in inr_history])
+        inr_growth = ((inr_cash - inr_init) / inr_init) * 100
 
         usd_wins = [t for t in usd_history if t.get("pnl", 0) > 0]
         usd_loss = [t for t in usd_history if t.get("pnl", 0) <= 0]
         usd_rate = (len(usd_wins) / len(usd_history) * 100) if usd_history else 0.0
         usd_pnl = sum([t.get("pnl", 0) for t in usd_history])
+        usd_growth = ((usd_cash - usd_init) / usd_init) * 100
 
         send_menu(
-            f"📈 *TOTAL PORTFOLIO PERFORMANCE*\n━━━━━━━━━━━━━━━━━━━━\n"
-            f"🇮🇳 *INDIAN EQUITIES (₹10,000 Pool):*\n"
-            f"• Total Trades: `{len(inr_history)}` (✅ {len(inr_wins)}W | ❌ {len(inr_loss)}L)\n"
+            f"📈 *TOTAL AUDITED PERFORMANCE*\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"🇮🇳 *INDIAN EQUITIES (₹10,000 Capital):*\n"
+            f"• Realized P&L: *{'+' if inr_pnl >= 0 else ''}₹{inr_pnl:.2f}* ({inr_growth:+.1f}%)\n"
+            f"• Closed Trades: `{len(inr_history)}` (✅ {len(inr_wins)}W | ❌ {len(inr_loss)}L)\n"
             f"• Win Rate: *{inr_rate:.1f}%*\n"
-            f"• Realized P&L: *{'+' if inr_pnl >= 0 else ''}₹{inr_pnl:.2f}*\n"
+            f"• Net Balance: `₹{inr_cash:.2f}`\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 *FOREX / CRYPTO (VANTAGE/XM $100 Pool):*\n"
-            f"• Total Trades: `{len(usd_history)}` (✅ {len(usd_wins)}W | ❌ {len(usd_loss)}L)\n"
+            f"🌐 *FOREX / CRYPTO ($100 Capital):*\n"
+            f"• Realized P&L: *{'+' if usd_pnl >= 0 else ''}${usd_pnl:.2f} USD* ({usd_growth:+.1f}%)\n"
+            f"• Closed Trades: `{len(usd_history)}` (✅ {len(usd_wins)}W | ❌ {len(usd_loss)}L)\n"
             f"• Win Rate: *{usd_rate:.1f}%*\n"
-            f"• Realized P&L: *{'+' if usd_pnl >= 0 else ''}${usd_pnl:.2f} USD*"
+            f"• Net Balance: `${usd_cash:.2f} USD`"
         )
 
     elif data == "btn_sync":
@@ -251,7 +259,11 @@ def handle_callback(query_id, data):
 
     elif data == "btn_breakdown":
         today_str = datetime.now(IST).strftime("%Y-%m-%d")
-        today_trades = [t for t in trade_state.get("trade_history", []) if t.get("date") == today_str]
+        with state_lock:
+            today_trades = [t for t in trade_state.get("trade_history", []) if t.get("date") == today_str]
+            inr_bal = trade_state['virtual_balance_inr']
+            usd_bal = trade_state['virtual_balance_usd']
+
         today_inr = [t for t in today_trades if t.get("currency") == "INR"]
         today_usd = [t for t in today_trades if t.get("currency") == "USD"]
 
@@ -268,12 +280,12 @@ def handle_callback(query_id, data):
             f"🇮🇳 *INDIAN EQUITIES TODAY:*\n"
             f"• Closed Trades: `{len(today_inr)}` (✅ {inr_wins}W | ❌ {inr_loss}L)\n"
             f"• Realized P&L: *{'+' if inr_pnl >= 0 else ''}₹{inr_pnl:.2f}*\n"
-            f"• Cash Balance: `₹{trade_state['virtual_balance_inr']:.2f}`\n"
+            f"• Available Cash: `₹{inr_bal:.2f}`\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 *FOREX / CRYPTO TODAY ($100 Pool):*\n"
+            f"🌐 *FOREX / CRYPTO TODAY:*\n"
             f"• Closed Trades: `{len(today_usd)}` (✅ {usd_wins}W | ❌ {usd_loss}L)\n"
             f"• Realized P&L: *{'+' if usd_pnl >= 0 else ''}${usd_pnl:.2f} USD*\n"
-            f"• USD Balance: `${trade_state['virtual_balance_usd']:.2f} USD`"
+            f"• Available Cash: `${usd_bal:.2f} USD`"
         )
 
     elif data == "btn_pause":
@@ -285,7 +297,8 @@ def handle_callback(query_id, data):
         send_menu("▶️ *SCANNER RESUMED*")
 
     elif data == "btn_panic":
-        positions = list(trade_state.get("open_positions", {}).items())
+        with state_lock:
+            positions = list(trade_state.get("open_positions", {}).items())
         if not positions:
             send_menu("🚨 *PANIC EXIT*\nKoi open position nahi mili.")
             return
@@ -304,14 +317,14 @@ def handle_callback(query_id, data):
             })
             del trade_state["open_positions"][sym]
         save_data(trade_state)
-        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaari positions square-off kar di gayi hain.")
+        send_menu("🚨 *PANIC EXIT COMPLETE!*\nSaari positions square-off ho chuki hain.")
 
 def fast_telegram_listener():
     global LAST_UPDATE_ID
     while True:
         try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={LAST_UPDATE_ID + 1}&timeout=1"
-            res = requests.get(url, timeout=3).json()
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={LAST_UPDATE_ID + 1}&timeout=2"
+            res = requests.get(url, timeout=4).json()
             for update in res.get("result", []):
                 LAST_UPDATE_ID = update["update_id"]
                 if "callback_query" in update:
@@ -327,13 +340,13 @@ def fast_telegram_listener():
 def manage_open_positions():
     global trade_state
     closed = []
-    positions = trade_state.get("open_positions", {})
+    with state_lock:
+        positions = dict(trade_state.get("open_positions", {}))
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
 
     for symbol, pos in list(positions.items()):
         try:
             is_fx = is_forex_or_crypto(symbol)
-            # Agar Indian market band hai toh Indian running positions ko skip karein
             if not is_fx and not is_indian_market_open():
                 continue
             if symbol in FOREX_STANDARD + SCALP_METALS and not is_forex_market_open():
@@ -372,7 +385,7 @@ def manage_open_positions():
                     else:
                         trade_state["virtual_balance_inr"] += (curr_price * qty)
                         send_alert(f"🎯 *TARGET HIT!*\n━━━━━━━━━━━━━━━━━━━━\n🇮🇳 `{clean_name}` | Exit: ₹{curr_price:.2f}\n💰 Profit: +₹{profit:.2f}\n💼 INR Balance: ₹{trade_state['virtual_balance_inr']:.2f}")
-                    
+
                     trade_state["trade_history"].append({"symbol": symbol, "type": "BUY", "entry": entry, "exit": curr_price, "pnl": profit, "result": "WIN", "style": pos["style"], "date": today_str, "currency": curr})
                     closed.append(symbol)
 
@@ -395,7 +408,8 @@ def manage_open_positions():
             print(f"Tracking error {symbol}: {e}")
 
     for sym in closed:
-        del trade_state["open_positions"][sym]
+        if sym in trade_state["open_positions"]:
+            del trade_state["open_positions"][sym]
     if closed:
         save_data(trade_state)
 
@@ -406,9 +420,7 @@ def scan_market():
 
     manage_open_positions()
 
-    # ==============================================================
     # ⚡ ENGINE 1: CRYPTO 24/7 (BTC & ETH 5M SCALPER)
-    # ==============================================================
     if trade_state["virtual_balance_usd"] >= 20.0:
         for symbol in SCALP_CRYPTO:
             if symbol in trade_state.get("open_positions", {}):
@@ -421,7 +433,6 @@ def scan_market():
                 if hasattr(df.columns, 'levels'):
                     df.columns = [col[0] for col in df.columns]
 
-                # Check freshness of candle
                 last_time = df.index[-1].to_pydatetime().replace(tzinfo=timezone.utc)
                 if (datetime.now(timezone.utc) - last_time).total_seconds() > 900:
                     continue
@@ -459,11 +470,9 @@ def scan_market():
                         f"💼 *USD Cash Left:* `${trade_state['virtual_balance_usd']:.2f} USD`"
                     )
             except Exception as e:
-                print(f"Crypto error {symbol}: {e}")
+                print(f"Crypto scan error {symbol}: {e}")
 
-    # ==============================================================
-    # 🌐 ENGINE 2: FOREX & GOLD (Active Only When Forex Market Open)
-    # ==============================================================
+    # 🌐 ENGINE 2: FOREX & GOLD
     if is_forex_market_open() and trade_state["virtual_balance_usd"] >= 20.0:
         for symbol in SCALP_METALS + FOREX_STANDARD:
             if symbol in trade_state.get("open_positions", {}):
@@ -517,11 +526,9 @@ def scan_market():
                         f"💼 *USD Cash Left:* `${trade_state['virtual_balance_usd']:.2f} USD`"
                     )
             except Exception as e:
-                print(f"FX/Metal error {symbol}: {e}")
+                print(f"FX scan error {symbol}: {e}")
 
-    # ==============================================================
-    # 🇮🇳 ENGINE 3: INDIAN EQUITIES (Active Only Monday-Friday 9:15-15:25 IST)
-    # ==============================================================
+    # 🇮🇳 ENGINE 3: INDIAN EQUITIES
     if is_indian_market_open() and trade_state["virtual_balance_inr"] >= 1000.0:
         for symbol in WATCHLIST_STOCKS:
             if symbol in trade_state.get("open_positions", {}):
@@ -534,7 +541,6 @@ def scan_market():
                 if hasattr(df.columns, 'levels'):
                     df.columns = [col[0] for col in df.columns]
 
-                # Check candle freshness (must be within last 20 minutes)
                 last_time = df.index[-1].to_pydatetime()
                 if last_time.tzinfo is None:
                     last_time = last_time.replace(tzinfo=IST)
@@ -578,16 +584,30 @@ def scan_market():
                         f"💼 *INR Cash Left:* `₹{trade_state['virtual_balance_inr']:.2f}`"
                     )
             except Exception as e:
-                print(f"Equity error {symbol}: {e}")
+                print(f"Equity scan error {symbol}: {e}")
 
-# Startup Menu Broadcast
-active_cnt = len(trade_state.get('open_positions', {}))
+# --- HEALTHCHECK HTTP SERVER (PREVENTS RENDER CRASH/SLEEP) ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Trading Bot Engine is Healthy & Active.")
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_health_server, daemon=True).start()
+
+# Startup Notification
 send_menu(
-    f"🎛️ *REAL-TIME TIMED ENGINE ONLINE*\n\n"
-    f"🇮🇳 *Indian Stock Market:* {'🟢 OPEN' if is_indian_market_open() else '🔴 CLOSED (Opens 9:15 AM)'}\n"
-    f"🌐 *Forex/Gold Market:* {'🟢 OPEN' if is_forex_market_open() else '🔴 CLOSED'}\n"
+    f"🎛️ *THREAD-SAFE MULTI-ENGINE ONLINE*\n\n"
+    f"🇮🇳 *Indian Stock Market:* {'🟢 OPEN' if is_indian_market_open() else '🔴 CLOSED'}\n"
+    f"🌐 *Forex/Gold:* {'🟢 OPEN' if is_forex_market_open() else '🔴 CLOSED'}\n"
     f"⚡ *Crypto (BTC/ETH):* 🟢 24/7 ACTIVE\n\n"
-    f"Neeche buttons se terminal monitor karein:"
+    f"Buttons se live positions aur overall P&L monitor karein:"
 )
 
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
