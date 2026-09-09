@@ -17,6 +17,9 @@ BOT_PAUSED = False
 IST = ZoneInfo("Asia/Kolkata")
 state_lock = threading.Lock()
 
+# Render Self-Ping URL (Render Dashboard se apna URL yahan daal sakte hain, e.g. "https://your-bot.onrender.com")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
+
 def send_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
@@ -27,10 +30,10 @@ def send_alert(message):
         print(f"Telegram API alert error: {e}")
         return None
 
-# --- MARKET TIMING GATES ---
+# --- MARKET TIMING GATES (REAL TRADING ONLY) ---
 def is_indian_market_open():
     now = datetime.now(IST)
-    if now.weekday() >= 5:
+    if now.weekday() >= 5: # Sat, Sun Closed
         return False
     market_start = now.replace(hour=9, minute=15, second=0, microsecond=0)
     market_end = now.replace(hour=15, minute=25, second=0, microsecond=0)
@@ -47,21 +50,27 @@ def is_forex_market_open():
         return False
     return True
 
-# --- THREAD-SAFE STATE PERSISTENCE ---
+# --- THREAD-SAFE STATE LOADER WITH RESTORED POSITIONS ---
 def load_data():
     default_data = {
-        "virtual_balance_inr": 10000.00,
+        "virtual_balance_inr": 175.89,
         "virtual_balance_usd": 100.00,
         "initial_capital_inr": 10000.00,
         "initial_capital_usd": 100.00,
-        "open_positions": {},
+        "open_positions": {
+            "GAIL.NS": {"type": "BUY", "entry": 177.20, "qty": 14, "sl": 174.54, "target": 183.40, "style": "🎯 INTRADAY", "trailed_level": 0, "currency": "INR"},
+            "INOXWIND.NS": {"type": "BUY", "entry": 75.71, "qty": 33, "sl": 74.57, "target": 78.36, "style": "🎯 INTRADAY", "trailed_level": 0, "currency": "INR"},
+            "NYKAA.NS": {"type": "BUY", "entry": 336.60, "qty": 7, "sl": 331.55, "target": 348.38, "style": "🎯 INTRADAY", "trailed_level": 0, "currency": "INR"},
+            "JPPOWER.NS": {"type": "BUY", "entry": 17.04, "qty": 146, "sl": 16.78, "target": 17.64, "style": "🎯 INTRADAY", "trailed_level": 0, "currency": "INR"}
+        },
         "trade_history": []
     }
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 saved = json.load(f)
-                return saved
+                if saved.get("open_positions") or len(saved.get("trade_history", [])) > 0:
+                    return saved
         except Exception:
             pass
     return default_data
@@ -157,7 +166,7 @@ def send_menu(text):
     try:
         requests.post(url, data=payload, timeout=5)
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Telegram menu error: {e}")
 
 def handle_callback(query_id, data):
     global trade_state, BOT_PAUSED
@@ -472,7 +481,7 @@ def scan_market():
             except Exception as e:
                 print(f"Crypto scan error {symbol}: {e}")
 
-    # 🌐 ENGINE 2: FOREX & GOLD
+    # 🌐 ENGINE 2: FOREX & GOLD (Active Only When Forex Open)
     if is_forex_market_open() and trade_state["virtual_balance_usd"] >= 20.0:
         for symbol in SCALP_METALS + FOREX_STANDARD:
             if symbol in trade_state.get("open_positions", {}):
@@ -528,7 +537,7 @@ def scan_market():
             except Exception as e:
                 print(f"FX scan error {symbol}: {e}")
 
-    # 🇮🇳 ENGINE 3: INDIAN EQUITIES
+    # 🇮🇳 ENGINE 3: INDIAN EQUITIES (Active Only Monday-Friday 9:15-15:25 IST)
     if is_indian_market_open() and trade_state["virtual_balance_inr"] >= 1000.0:
         for symbol in WATCHLIST_STOCKS:
             if symbol in trade_state.get("open_positions", {}):
@@ -586,28 +595,45 @@ def scan_market():
             except Exception as e:
                 print(f"Equity scan error {symbol}: {e}")
 
-# --- HEALTHCHECK HTTP SERVER (PREVENTS RENDER CRASH/SLEEP) ---
+# --- KEEP-ALIVE SERVER & ANTI-SLEEP SELF-PING ---
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        self.wfile.write(b"Trading Bot Engine is Healthy & Active.")
+        self.wfile.write(b"Bot Engine is 100% Active & Alive.")
 
 def run_health_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
+def render_anti_sleep_loop():
+    """Har 8 minute me local server ko ping karke thread ko continuous awake rakhta hai"""
+    port = int(os.environ.get("PORT", 8080))
+    local_url = f"http://127.0.0.1:{port}"
+    while True:
+        try:
+            time.sleep(480) # 8 minutes
+            requests.get(local_url, timeout=5)
+            if RENDER_EXTERNAL_URL:
+                requests.get(RENDER_EXTERNAL_URL, timeout=10)
+        except Exception:
+            pass
+
 threading.Thread(target=run_health_server, daemon=True).start()
+threading.Thread(target=render_anti_sleep_loop, daemon=True).start()
 
 # Startup Notification
+active_cnt = len(trade_state.get('open_positions', {}))
 send_menu(
-    f"🎛️ *THREAD-SAFE MULTI-ENGINE ONLINE*\n\n"
-    f"🇮🇳 *Indian Stock Market:* {'🟢 OPEN' if is_indian_market_open() else '🔴 CLOSED'}\n"
-    f"🌐 *Forex/Gold:* {'🟢 OPEN' if is_forex_market_open() else '🔴 CLOSED'}\n"
-    f"⚡ *Crypto (BTC/ETH):* 🟢 24/7 ACTIVE\n\n"
-    f"Buttons se live positions aur overall P&L monitor karein:"
+    f"🎛️ *24/7 PERMANENT NON-STOP ENGINE ONLINE*\n\n"
+    f"🇮🇳 *Indian Stocks:* {'🟢 OPEN' if is_indian_market_open() else '🔴 CLOSED'}\n"
+    f"🌐 *Forex / Gold:* {'🟢 OPEN' if is_forex_market_open() else '🔴 CLOSED'}\n"
+    f"⚡ *Crypto (BTC/ETH):* 🟢 24/7 ACTIVE\n"
+    f"📂 *Restored Trades:* {active_cnt} Active\n\n"
+    f"Anti-Sleep Loop: ✅ Active (Render won't sleep)\n"
+    f"Neeche buttons se terminal monitor karein:"
 )
 
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
