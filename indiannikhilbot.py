@@ -37,8 +37,14 @@ def is_indian_market_open():
     market_end = now.replace(hour=15, minute=30, second=0, microsecond=0)
     return market_start <= now <= market_end
 
-# --- 7 HIGH WIN-RATE SWING STRATEGIES WITH EXPANDED RRR ---
+# --- 8 INSTITUTIONAL SWING STRATEGIES (INCLUDING WYCKOFF SPRING / SHAKEOUT) ---
 STRATEGIES = {
+    "STRAT_8": {
+        "name": "🔥 Wyckoff Shakeout / Spring Trap",
+        "tag": "Smart Money Trap",
+        "desc": "False breakdown below support followed by instant institutional reclaim",
+        "rrr": "1:3.5", "sl_pct": 0.028, "target_pct": 0.110, "trail_at": 0.040
+    },
     "STRAT_1": {
         "name": "1. 20 EMA Pullback Bounce",
         "tag": "Trend Continuation",
@@ -83,12 +89,47 @@ STRATEGIES = {
     }
 }
 
+# --- 165 LIQUID INDIAN STOCKS BASKET ---
+SWING_WATCHLIST_ALL = [
+    "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
+    "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
+    "IRFC.NS", "RVNL.NS", "SUZLON.NS", "ZOMATO.NS", "PAYTM.NS", "IDEA.NS",
+    "YESBANK.NS", "PNB.NS", "BANKBARODA.NS", "CANBK.NS", "UNIONBANK.NS", "IDFCFIRSTB.NS",
+    "ASHOKLEY.NS", "GMRINFRA.NS", "ABCAPITAL.NS", "MANAPPURAM.NS", "FEDERALBNK.NS",
+    "IOC.NS", "BPCL.NS", "POWERGRID.NS", "NTPC.NS", "RPOWER.NS", "JPPOWER.NS",
+    "IFCI.NS", "IREDA.NS", "HUDCO.NS", "NBCC.NS", "RAILTEL.NS", "IRCON.NS",
+    "SJVN.NS", "NHPC.NS", "MAZDOCK.NS", "COCHINSHIP.NS", "HAL.NS", "BDL.NS",
+    "PATANJALI.NS", "EXIDEIND.NS", "AMARAJABAT.NS", "MOTHERSON.NS", "TATACHEM.NS",
+    "JINDALSTEL.NS", "JSWSTEEL.NS", "HCLTECH.NS", "WIPRO.NS", "INFY.NS",
+    "BHARTIARTL.NS", "ADANIENT.NS", "ADANIPORTS.NS", "ADANIPOWER.NS", "ADANIGREEN.NS",
+    "DLF.NS", "GODREJPROP.NS", "CHOLAFIN.NS", "POONAWALLA.NS", "L&TFH.NS",
+    "MUTHOOTFIN.NS", "BANDHANBNK.NS", "UCOBANK.NS", "CENTRALBK.NS", "BANKINDIA.NS",
+    "IOB.NS", "OIL.NS", "GAIL.NS", "DELHIVERY.NS", "NYKAA.NS", "POLICYBZR.NS",
+    "JUBLFOOD.NS", "HAVELLS.NS", "TVSMOTOR.NS", "HEROMOTOCO.NS", "PARAS.NS",
+    "MTARTECH.NS", "DATA-PATTERNS.NS", "KPIGREEN.NS", "BORORENEW.NS", "GMDCLTD.NS",
+    "TATAINVEST.NS", "KALYANKJIL.NS", "HBLPOWER.NS", "ENGINERSIN.NS", "WAAREEENER.NS",
+    "PREMIERENE.NS", "RITES.NS", "GRSE.NS", "BEML.NS", "ASTRAL.NS", "POLYCAB.NS",
+    "KEI.NS", "DIXON.NS", "KAYNES.NS", "PERSISTENT.NS", "COFORGE.NS", "MPHASIS.NS",
+    "TITAN.NS", "TRENT.NS", "DMART.NS", "APOLLOTYRE.NS", "MRF.NS", "BALKRISIND.NS",
+    "ESCORTS.NS", "DEEPAKNTR.NS", "TATAELXSI.NS", "CLEAN.NS", "FINEORG.NS",
+    "AETHER.NS", "SUVENPHAR.NS", "NATCOPHARM.NS", "GLENMARK.NS", "LUPIN.NS",
+    "AUROPHARMA.NS", "PRESTIGE.NS", "OBEROIRLTY.NS", "PHOENIXLTD.NS", "SUNTECK.NS",
+    "NCC.NS", "HFCL.NS", "TEJASNET.NS", "KEC.NS", "KALPATPOWR.NS", "CESC.NS",
+    "TORNTPOWER.NS", "TATAPOWER.NS", "JSWENERGY.NS", "INOXWIND.NS", "TITAGARH.NS",
+    "TEXRAIL.NS", "JWL.NS", "ZENITHEXPO.NS", "ASTERDM.NS", "APLAPOLLO.NS",
+    "CGPOWER.NS", "SUNDRMFAST.NS", "SCHNEIDER.NS", "TRITURBINE.NS", "THERMAX.NS",
+    "PRAJIND.NS", "ELECON.NS", "KIRLOSENG.NS", "CUMMINSIND.NS", "MAHINDCIE.NS",
+    "SONACOMS.NS", "UNOMINDA.NS", "SUPRAJIT.NS", "RADICO.NS", "TIINDIA.NS",
+    "JBCHEPHARM.NS", "ERIS.NS", "AJANTPHARM.NS", "SYNGENE.NS", "CHAMBLFERT.NS",
+    "COROMANDEL.NS", "GNFC.NS", "GSFC.NS", "FACT.NS"
+]
+
 # --- STATE MANAGEMENT ---
 def load_data():
     default_data = {
         "virtual_balance": 10000.00,
         "initial_capital": 10000.00,
-        "active_strategy": "STRAT_1",
+        "active_strategy": "STRAT_8", # Set to Smart Money Trap by default
         "open_positions": {},
         "trade_history": []
     }
@@ -97,7 +138,7 @@ def load_data():
             with open(DATA_FILE, "r") as f:
                 saved = json.load(f)
                 if "active_strategy" not in saved or saved["active_strategy"] not in STRATEGIES:
-                    saved["active_strategy"] = "STRAT_1"
+                    saved["active_strategy"] = "STRAT_8"
                 return saved
         except Exception:
             pass
@@ -113,38 +154,22 @@ def save_data(data):
 
 trade_state = load_data()
 
-# 🎯 TOP SWING BASKET + BENCHMARK INDICES
-SWING_WATCHLIST = [
-    "TATASTEEL.NS", "BEL.NS", "BHEL.NS", "SAIL.NS", "NATIONALUM.NS", "NMDC.NS",
-    "PFC.NS", "RECLTD.NS", "COALINDIA.NS", "HINDALCO.NS", "VEDL.NS", "ONGC.NS",
-    "IRFC.NS", "RVNL.NS", "SUZLON.NS", "ZOMATO.NS", "PNB.NS", "BANKBARODA.NS",
-    "CANBK.NS", "ASHOKLEY.NS", "FEDERALBNK.NS", "IOC.NS", "POWERGRID.NS", "NTPC.NS",
-    "IREDA.NS", "HUDCO.NS", "HAL.NS", "BDL.NS", "EXIDEIND.NS", "MOTHERSON.NS",
-    "JINDALSTEL.NS", "JSWSTEEL.NS", "BHARTIARTL.NS", "ADANIENT.NS", "ADANIPOWER.NS",
-    "TATAPOWER.NS", "INOXWIND.NS", "TITAGARH.NS", "MAZDOCK.NS", "COCHINSHIP.NS"
-]
-
-BENCHMARK_INDICES = {
-    "^NSEI": "NIFTY 50",
-    "^NSEBANK": "BANK NIFTY"
-}
-
 # --- UI MENUS ---
 def send_menu(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    active_strat = STRATEGIES.get(trade_state.get("active_strategy", "STRAT_1"), {})["name"]
+    active_strat = STRATEGIES.get(trade_state.get("active_strategy", "STRAT_8"), {})["name"]
     keyboard = {
         "inline_keyboard": [
             [
                 {"text": "📊 Open Positions", "callback_data": "btn_positions"},
-                {"text": "💰 10K➔100K Journey", "callback_data": "btn_wallet"}
+                {"text": "💰 10K➔100K Wallet", "callback_data": "btn_wallet"}
             ],
             [
                 {"text": f"⚙️ Strategy: {active_strat}", "callback_data": "btn_select_strat"}
             ],
             [
-                {"text": "🧪 Backtest (Stocks & Indices)", "callback_data": "btn_backtest_menu"},
-                {"text": "🔄 Scan Now", "callback_data": "btn_scan"}
+                {"text": "🧪 Backtest All Individual Stocks", "callback_data": "btn_backtest_menu"},
+                {"text": "🔄 Scan 165 Stocks", "callback_data": "btn_scan"}
             ],
             [
                 {"text": "📈 Performance Audit", "callback_data": "btn_audit"},
@@ -164,7 +189,7 @@ def send_menu(text):
 
 def send_strategy_selector():
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    curr = trade_state.get("active_strategy", "STRAT_1")
+    curr = trade_state.get("active_strategy", "STRAT_8")
     buttons = []
     for k, v in STRATEGIES.items():
         tick = "✅ " if k == curr else ""
@@ -174,7 +199,7 @@ def send_strategy_selector():
     msg = (
         "⚙️ *SELECT ACTIVE SWING STRATEGY*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "Aap jis strategy par bot ko trades lene dena chahte hain, select karein:\n"
+        "Jis strategy par 165 stocks ko live trade karna hai, select karein:\n"
     )
     payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown", "reply_markup": json.dumps(keyboard)}
     requests.post(url, data=payload, timeout=5)
@@ -182,7 +207,8 @@ def send_strategy_selector():
 def send_backtest_options():
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     buttons = [
-        [{"text": "🏆 Comprehensive Audit (All 7 on Top Stocks)", "callback_data": "bt_ALL"}],
+        [{"text": "📋 Detailed Stock-by-Stock Report (Top 25 Stocks)", "callback_data": "bt_STOCK_BREAKDOWN"}],
+        [{"text": "🔥 Test Wyckoff Shakeout Trap (All Stocks)", "callback_data": "bt_STRAT_8"}],
         [{"text": "📈 Test NIFTY 50 Index", "callback_data": "bt_idx_NIFTY"}, {"text": "🏦 Test BANK NIFTY Index", "callback_data": "bt_idx_BANKNIFTY"}],
         [{"text": "1. 20 EMA Pullback", "callback_data": "bt_STRAT_1"}, {"text": "2. Positional ORB", "callback_data": "bt_STRAT_2"}],
         [{"text": "3. S/R Flip Retest", "callback_data": "bt_STRAT_3"}, {"text": "4. VCP Pattern", "callback_data": "bt_STRAT_4"}],
@@ -192,14 +218,14 @@ def send_backtest_options():
     ]
     keyboard = {"inline_keyboard": buttons}
     msg = (
-        "🧪 *MULTI-ASSET HISTORICAL BACKTEST ENGINE*\n"
+        "🧪 *INDIVIDUAL STOCK & BENCHMARK BACKTEST*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "1-Year Real Daily Candle Data par Win Rate %, Max Drawdown, aur Net Profit audit karein:"
+        "Ab aap har ek individual stock (TATASTEEL, BEL, etc.) ka alag-alag win rate aur exact score dekh sakte hain:"
     )
     payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown", "reply_markup": json.dumps(keyboard)}
     requests.post(url, data=payload, timeout=5)
 
-# --- TECHNICAL STRATEGY EVALUATION ---
+# --- TECHNICAL FORMULAS ---
 def evaluate_strategy(df, strat_key, nifty_df=None):
     if len(df) < 65:
         return False, ""
@@ -216,34 +242,48 @@ def evaluate_strategy(df, strat_key, nifty_df=None):
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
-    # 1. The 20 EMA Pullback Strategy (Uptrend wave)
-    if strat_key == "STRAT_1":
+    # 🔥 STRATEGY 8: WYCKOFF SHAKEOUT / SPRING TRAP (Smart Money Setup)
+    if strat_key == "STRAT_8":
+        # Check swing low of past 15-20 days
+        support_level = float(df['Low'].shift(2).rolling(18).min().iloc[-1])
+        prev_low = float(df['Low'].iloc[-2])
+        prev_close = float(df['Close'].iloc[-2])
+
+        # Setup: Yesterday dipped below support (Shakeout trap), today reclaimed aggressively above it
+        shakeout_occurred = (prev_low < support_level * 0.998)
+        reclaimed_today = (c > support_level and c > o and vol_ratio >= 1.4)
+
+        if shakeout_occurred and reclaimed_today:
+            return True, f"Smart Money Shakeout Trap: False breakdown below support (₹{support_level:.1f}) reclaimed with {vol_ratio:.1f}x Volume"
+
+    # 1. The 20 EMA Pullback Strategy
+    elif strat_key == "STRAT_1":
         ema20 = float(df['EMA20'].iloc[-1])
         ema50 = float(df['EMA50'].iloc[-1])
         ema200 = float(df['EMA200'].iloc[-1])
         if ema20 > ema50 > ema200 and l <= ema20 * 1.012 and c > ema20 and c > o:
             return True, f"Uptrend bounce: Green rejection bar at 20 EMA (₹{ema20:.1f}) above 50/200 EMA"
 
-    # 2. Opening Range Breakout (ORB) with Volume (5-10 Days)
+    # 2. Positional ORB with Volume
     elif strat_key == "STRAT_2":
         high_10 = float(df['High'].shift(1).rolling(10).max().iloc[-1])
         if c > high_10 and vol_ratio >= 2.0:
-            return True, f"10-Day Resistance (₹{high_10:.1f}) breached with {vol_ratio:.1f}x Institutional Volume"
+            return True, f"10-Day Resistance (₹{high_10:.1f}) breached with {vol_ratio:.1f}x Volume"
 
-    # 3. Support / Resistance Flip (SR Flip / Role Reversal)
+    # 3. Support / Resistance Flip
     elif strat_key == "STRAT_3":
         past_res = float(df['High'].shift(3).rolling(20).max().iloc[-1])
         prev_close = float(df['Close'].iloc[-2])
         if prev_close >= past_res and l <= past_res * 1.01 and c > past_res and c > o:
-            return True, f"S/R Flip Retest: Prior resistance (₹{past_res:.1f}) tested successfully as fresh support"
+            return True, f"S/R Flip Retest: Prior resistance (₹{past_res:.1f}) held firmly as support"
 
-    # 4. The VCP (Volatility Contraction Pattern - Minervini)
+    # 4. VCP Pattern (Minervini)
     elif strat_key == "STRAT_4":
         range_now = float((df['High'] - df['Low']).rolling(4).mean().iloc[-1])
         range_past = float((df['High'] - df['Low']).rolling(20).mean().iloc[-1])
         high_15 = float(df['High'].shift(1).rolling(15).max().iloc[-1])
         if range_now < (0.60 * range_past) and c > high_15 and vol_ratio >= 1.7:
-            return True, f"VCP Breakout: Volatility compressed 40%+ into tight contraction with volume surge"
+            return True, f"VCP Breakout: Volatility compressed 40%+ into tight contraction with volume"
 
     # 5. Bollinger Band Squeeze Breakout
     elif strat_key == "STRAT_5":
@@ -255,9 +295,9 @@ def evaluate_strategy(df, strat_key, nifty_df=None):
         bw_now = float(bw.iloc[-1])
         bw_avg = float(bw.rolling(20).mean().iloc[-1])
         if bw_now < bw_avg * 0.80 and c > float(upper_bb.iloc[-1]) and vol_ratio >= 1.6:
-            return True, f"Bollinger Squeeze Release: Upper band (₹{float(upper_bb.iloc[-1]):.1f}) blown out with expansion"
+            return True, f"Bollinger Squeeze Release: Upper band cleared with expansion"
 
-    # 6. MACD Zero-Line / Histogram Momentum Shift
+    # 6. MACD Zero-Line Momentum
     elif strat_key == "STRAT_6":
         exp1 = df['Close'].ewm(span=12, adjust=False).mean()
         exp2 = df['Close'].ewm(span=26, adjust=False).mean()
@@ -266,49 +306,40 @@ def evaluate_strategy(df, strat_key, nifty_df=None):
         hist = macd - sig
         high_5 = float(df['High'].shift(1).rolling(5).max().iloc[-1])
         if float(hist.iloc[-2]) < 0 and float(hist.iloc[-1]) > 0 and c > high_5:
-            return True, f"MACD Histogram flipped positive (+{float(hist.iloc[-1]):.2f}) confirming fresh wave"
+            return True, f"MACD Histogram flipped positive (+{float(hist.iloc[-1]):.2f}) with breakout"
 
     # 7. ORB with Relative Strength (vs NIFTY 50)
     elif strat_key == "STRAT_7":
         high_5 = float(df['High'].shift(1).rolling(5).max().iloc[-1])
         if nifty_df is not None and len(nifty_df) >= 5:
-            stock_5d_ret = ((c - float(df['Close'].iloc[-5])) / float(df['Close'].iloc[-5])) * 100
-            nifty_5d_ret = ((float(nifty_df['Close'].iloc[-1]) - float(nifty_df['Close'].iloc[-5])) / float(nifty_df['Close'].iloc[-5])) * 100
-            is_outperforming = stock_5d_ret > (nifty_5d_ret + 2.0)
+            stock_5d = ((c - float(df['Close'].iloc[-5])) / float(df['Close'].iloc[-5])) * 100
+            nifty_5d = ((float(nifty_df['Close'].iloc[-1]) - float(nifty_df['Close'].iloc[-5])) / float(nifty_df['Close'].iloc[-5])) * 100
+            is_outperforming = stock_5d > (nifty_5d + 2.0)
         else:
             is_outperforming = True
         
         if c > high_5 and is_outperforming and vol_ratio >= 1.5:
-            return True, f"Alpha Breakout: Stock at 5-Day High while significantly outperforming Nifty 50"
+            return True, f"Relative Strength: 5-Day high while beating Nifty by +2.0%"
 
     return False, ""
 
-# --- HISTORICAL BACKTEST ENGINE ---
-def run_backtest_simulation(strat_key, ticker_list):
+# --- DETAILED STOCK-BY-STOCK BACKTEST ENGINE ---
+def run_stock_by_stock_audit(strat_key, ticker_list):
     strat = STRATEGIES[strat_key]
     target = strat["target_pct"]
     sl = strat["sl_pct"]
-    total_trades, wins, losses = 0, 0, 0
-    total_yield = 0.0
-
-    # Fetch Nifty data for relative strength reference
-    nifty_df = None
-    if strat_key == "STRAT_7":
-        try:
-            nifty_df = yf.download(tickers="^NSEI", period="1y", interval="1d", progress=False)
-            if hasattr(nifty_df.columns, 'levels'):
-                nifty_df.columns = [col[0] for col in nifty_df.columns]
-        except Exception:
-            pass
+    stock_results = []
 
     for sym in ticker_list:
         try:
+            time.sleep(0.02)
             df = yf.download(tickers=sym, period="1y", interval="1d", progress=False)
             if df is None or df.empty or len(df) < 70:
                 continue
             if hasattr(df.columns, 'levels'):
                 df.columns = [col[0] for col in df.columns]
 
+            t_cnt, w_cnt, l_cnt = 0, 0, 0
             in_pos = False
             entry_p = 0.0
 
@@ -319,84 +350,86 @@ def run_backtest_simulation(strat_key, ticker_list):
                 if in_pos:
                     pnl_pct = (c - entry_p) / entry_p
                     if pnl_pct >= target:
-                        wins += 1
-                        total_trades += 1
-                        total_yield += target
+                        w_cnt += 1
+                        t_cnt += 1
                         in_pos = False
                     elif pnl_pct <= -sl:
-                        losses += 1
-                        total_trades += 1
-                        total_yield -= sl
+                        l_cnt += 1
+                        t_cnt += 1
                         in_pos = False
                     continue
 
-                nifty_sub = nifty_df.iloc[:i+1] if nifty_df is not None and len(nifty_df) >= i+1 else None
-                sig, _ = evaluate_strategy(sub_df, strat_key, nifty_sub)
+                sig, _ = evaluate_strategy(sub_df, strat_key)
                 if sig:
                     in_pos = True
                     entry_p = c
+
+            if t_cnt > 0:
+                win_rate = (w_cnt / t_cnt) * 100
+                clean_name = sym.replace(".NS", "")
+                stock_results.append({
+                    "symbol": clean_name,
+                    "trades": t_cnt,
+                    "wins": w_cnt,
+                    "losses": l_cnt,
+                    "win_rate": win_rate
+                })
         except Exception:
             pass
 
-    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
-    return {
-        "strat": strat["name"],
-        "rrr": strat["rrr"],
-        "trades": total_trades,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": win_rate,
-        "yield": total_yield * 100
-    }
+    # Sort stocks by best win rate
+    stock_results.sort(key=lambda x: (x["win_rate"], x["trades"]), reverse=True)
+    return stock_results
 
 def handle_backtest_action(action_key):
-    if action_key == "ALL":
-        send_alert("⏳ *Running 1-Year Backtest for All 7 Strategies across Top 12 NSE Leaders...*")
-        sample_basket = SWING_WATCHLIST[:12]
-        results = [run_backtest_simulation(k, sample_basket) for k in STRATEGIES.keys()]
+    curr_strat = trade_state.get("active_strategy", "STRAT_8")
+    
+    if action_key == "STOCK_BREAKDOWN":
+        send_alert("⏳ *Scanning and computing Stock-by-Stock Win Rates for Top 25 Leaders... (Takes ~20s)*")
+        sample = SWING_WATCHLIST_ALL[:25]
+        results = run_stock_by_stock_audit(curr_strat, sample)
 
-        msg = "🏆 *1-YEAR HISTORICAL SWING AUDIT REPORT*\n━━━━━━━━━━━━━━━━━━━━\n"
-        for r in results:
-            msg += (
-                f"📌 *{r['strat']}* (RRR `{r['rrr']}`)\n"
-                f"• Win Rate: *{r['win_rate']:.1f}%* ({r['wins']}W | {r['losses']}L)\n"
-                f"• Total Trades: `{r['trades']}` | Net Alpha: *{r['yield']:+.1f}%*\n\n"
-            )
-        msg += "━━━━━━━━━━━━━━━━━━━━\n💡 Switch strategy via '⚙️ Strategy' menu anytime!"
+        msg = f"📋 *STOCK-BY-STOCK PERFORMANCE BREAKDOWN*\n"
+        msg += f"⚙️ Strategy: *{STRATEGIES[curr_strat]['name']}* ({STRATEGIES[curr_strat]['rrr']})\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+        for s in results[:15]:
+            badge = "🟢" if s['win_rate'] >= 60 else ("🟡" if s['win_rate'] >= 50 else "🔴")
+            msg += f"{badge} *{s['symbol']}*: *{s['win_rate']:.1f}% Win* (`{s['wins']}W | {s['losses']}L` over `{s['trades']}` trades)\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n💡 High-win rate stocks par bot priority trade lega!"
         send_menu(msg)
 
     elif action_key.startswith("idx_"):
         idx_sym = "^NSEI" if "NIFTY" in action_key and "BANK" not in action_key else "^NSEBANK"
         idx_name = "NIFTY 50" if idx_sym == "^NSEI" else "BANK NIFTY"
-        send_alert(f"⏳ *Testing all strategies on `{idx_name}` 1-Year Daily Data...*")
+        send_alert(f"⏳ *Auditing all setups on `{idx_name}` 1-Year Daily Data...*")
         
-        msg = f"📊 *{idx_name} HISTORICAL AUDIT REPORT*\n━━━━━━━━━━━━━━━━━━━━\n"
-        for k in STRATEGIES.keys():
-            r = run_backtest_simulation(k, [idx_sym])
-            msg += (
-                f"• *{r['strat']}*: *{r['win_rate']:.1f}% Win* "
-                f"({r['wins']}W/{r['losses']}L) | Net: `{r['yield']:+.1f}%`\n"
-            )
+        msg = f"📊 *{idx_name} HISTORICAL AUDIT*\n━━━━━━━━━━━━━━━━━━━━\n"
+        for k, v in STRATEGIES.items():
+            r = run_stock_by_stock_audit(k, [idx_sym])
+            if r:
+                s = r[0]
+                msg += f"• *{v['name']}*: *{s['win_rate']:.1f}% Win* (`{s['wins']}W/{s['losses']}L`)\n"
         msg += "━━━━━━━━━━━━━━━━━━━━"
         send_menu(msg)
 
     else:
         strat_name = STRATEGIES[action_key]["name"]
-        send_alert(f"⏳ *Auditing `{strat_name}` against 1-Year Daily historical records...*")
-        r = run_backtest_simulation(action_key, SWING_WATCHLIST[:12])
-        target_pct = STRATEGIES[action_key]["target_pct"] * 100
-        sl_pct = STRATEGIES[action_key]["sl_pct"] * 100
+        send_alert(f"⏳ *Auditing `{strat_name}` across individual stocks...*")
+        results = run_stock_by_stock_audit(action_key, SWING_WATCHLIST_ALL[:20])
+        total_t = sum([s["trades"] for s in results])
+        total_w = sum([s["wins"] for s in results])
+        avg_rate = (total_w / total_t * 100) if total_t > 0 else 0.0
+
         msg = (
-            f"🧪 *STRATEGY AUDIT: {r['strat']}*\n"
+            f"🧪 *STRATEGY AUDIT: {strat_name}*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎯 Risk-Reward Ratio: *{r['rrr']}*\n"
-            f"🔥 Historical Win Rate: *{r['win_rate']:.1f}%*\n"
-            f"📦 Simulated Trades: `{r['trades']}`\n"
-            f"✅ Target Hits (+{target_pct:.1f}%): `{r['wins']}`\n"
-            f"❌ Stop-Loss Hits (-{sl_pct:.1f}%): `{r['losses']}`\n"
-            f"📈 Cumulative Compounded Return: *{r['yield']:+.1f}%*\n"
-            f"━━━━━━━━━━━━━━━━━━━━"
+            f"🎯 Risk-Reward Ratio: *{STRATEGIES[action_key]['rrr']}*\n"
+            f"🔥 Overall Win Rate: *{avg_rate:.1f}%* across `{total_t}` trades\n\n"
+            f"🏆 *Top 5 Winning Stocks on this Setup:*\n"
         )
+        for s in results[:5]:
+            msg += f"• *{s['symbol']}*: *{s['win_rate']:.1f}% Win* (`{s['wins']}W/{s['losses']}L`)\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━"
         send_menu(msg)
 
 # --- TELEGRAM CALLBACK HANDLER ---
@@ -414,14 +447,14 @@ def handle_callback(query_id, data):
                 trail_txt = "🛡️ Breakeven (0 Risk)" if d.get('trailed_level', 0) == 1 else f"SL: ₹{d['sl']:.2f}"
                 msg += (
                     f"📦 *{name}*\n"
-                    f"• Strategy: *{d.get('strat_name', 'Swing')}* ({d.get('rrr', '1:3')})\n"
-                    f"• Rationale: _{d.get('reason', 'N/A')}_\n"
+                    f"• Strategy: *{d.get('strat_name', 'Swing')}* ({d.get('rrr', '1:3.5')})\n"
+                    f"• Setup: _{d.get('reason', 'N/A')}_\n"
                     f"• Entry: `₹{d['entry']:.2f}` | Qty: `{d['qty']}`\n"
                     f"• Target: `₹{d['target']:.2f}` | Guard: `{trail_txt}`\n"
                     f"• Allocation: `₹{(d['entry']*d['qty']):.2f}`\n\n"
                 )
         else:
-            msg += "_(Koi active swing trade nahi hai - bot scanning kar raha hai)_\n"
+            msg += "_(Koi active swing trade nahi hai - bot 165 stocks scan kar raha hai)_\n"
         send_menu(msg)
 
     elif data == "btn_wallet":
@@ -442,7 +475,7 @@ def handle_callback(query_id, data):
             f"• Liquid Cash: `₹{cash:,.2f}`\n"
             f"• In-Trade Margin: `₹{invested:,.2f}`\n"
             f"• Total ROI: *{growth:+.2f}%*\n"
-            f"• Journey Completed: *{target_pct:.1f}%* towards ₹1 Lakh\n"
+            f"• Target Progress: *{target_pct:.1f}%* towards ₹1 Lakh\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
 
@@ -454,7 +487,7 @@ def handle_callback(query_id, data):
         trade_state["active_strategy"] = strat_key
         save_data(trade_state)
         s_name = STRATEGIES[strat_key]["name"]
-        send_menu(f"✅ *ACTIVE STRATEGY ACTIVATED:*\n👉 *{s_name}*\n\nAb agle trades is setup ke strict parameters par liye jayenge!")
+        send_menu(f"✅ *STRATEGY SWITCHED:*\n👉 *{s_name}*\n\nAb poore 165 stocks is setup ke rules par scan honge!")
 
     elif data == "btn_backtest_menu":
         send_backtest_options()
@@ -467,7 +500,7 @@ def handle_callback(query_id, data):
         send_menu("🎛️ *COMMAND TERMINAL ACTIVE*")
 
     elif data == "btn_scan":
-        send_alert("🔍 *Running Manual Scan Across 40 NSE Leaders...*")
+        send_alert("🔍 *Scanning Entire 165 Stocks Basket with Active Strategy...*")
         threading.Thread(target=scan_swing_breakouts).start()
 
     elif data == "btn_audit":
@@ -485,7 +518,7 @@ def handle_callback(query_id, data):
             f"• Total Closed: `{len(history)}`\n"
             f"• Win Rate: *{rate:.1f}%* ({len(wins)}W | {len(losses)}L)\n"
             f"• Realized Net Profit: *{'+' if total_pnl >= 0 else ''}₹{total_pnl:,.2f}*\n"
-            f"• Available Liquid Capital: `₹{cash:,.2f}`"
+            f"• Liquid Capital: `₹{cash:,.2f}`"
         )
 
     elif data == "btn_pause":
@@ -552,7 +585,6 @@ def manage_swing_positions():
             name = sym.replace(".NS", "")
             trail_pct = d.get('trail_at', 0.04) * 100
 
-            # 🛡️ Step 1: Trailing to Breakeven (Zero Risk)
             if d.get('trailed_level', 0) == 0 and gain_pct >= trail_pct:
                 d['sl'] = entry
                 d['trailed_level'] = 1
@@ -562,14 +594,13 @@ def manage_swing_positions():
                     f"Move: *+{gain_pct:.2f}%*! SL breakeven cost (₹{entry:.2f}) par lock ho gaya hai. Trade is now 100% Risk-Free!"
                 )
 
-            # 🎯 Target Hit (Full RRR Achieved)
             if curr_price >= d['target']:
                 profit = round((curr_price - entry) * qty, 2)
                 trade_state["virtual_balance"] += (curr_price * qty)
                 send_alert(
                     f"🎯 *TARGET HIT: {name}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📌 *Strategy:* `{d.get('strat_name', 'Swing')}` ({d.get('rrr', '1:3')})\n"
+                    f"📌 *Strategy:* `{d.get('strat_name', 'Swing')}` ({d.get('rrr', '1:3.5')})\n"
                     f"💵 *Entry:* `₹{entry:.2f}` | *Exit:* `₹{curr_price:.2f}` (+{gain_pct:.2f}%)\n"
                     f"💰 *Net Profit Booked:* *+₹{profit:,.2f}*\n"
                     f"💼 *Compounded Balance:* *₹{trade_state['virtual_balance']:,.2f}*\n"
@@ -581,7 +612,6 @@ def manage_swing_positions():
                 })
                 closed.append(sym)
 
-            # 🛑 Stop Loss Hit
             elif curr_price <= d['sl']:
                 pnl = round((curr_price - entry) * qty, 2)
                 trade_state["virtual_balance"] += (curr_price * qty)
@@ -609,7 +639,7 @@ def manage_swing_positions():
     if closed:
         save_data(trade_state)
 
-# --- BREAKOUT SCANNER ---
+# --- 165 STOCKS BREAKOUT SCANNER ---
 def scan_swing_breakouts():
     global trade_state, BOT_PAUSED
     if BOT_PAUSED:
@@ -622,8 +652,8 @@ def scan_swing_breakouts():
     if trade_state["virtual_balance"] < 4000.0:
         return
 
-    strat_key = trade_state.get("active_strategy", "STRAT_1")
-    strat_cfg = STRATEGIES.get(strat_key, STRATEGIES["STRAT_1"])
+    strat_key = trade_state.get("active_strategy", "STRAT_8")
+    strat_cfg = STRATEGIES.get(strat_key, STRATEGIES["STRAT_8"])
 
     nifty_df = None
     if strat_key == "STRAT_7":
@@ -634,11 +664,11 @@ def scan_swing_breakouts():
         except Exception:
             pass
 
-    for sym in SWING_WATCHLIST:
+    for sym in SWING_WATCHLIST_ALL:
         if sym in trade_state.get("open_positions", {}):
             continue
         try:
-            time.sleep(0.12)
+            time.sleep(0.08)
             df = yf.download(tickers=sym, period="3mo", interval="1d", progress=False)
             if df is None or df.empty or len(df) < 55:
                 continue
@@ -670,19 +700,19 @@ def scan_swing_breakouts():
                 name = sym.replace(".NS", "")
 
                 send_alert(
-                    f"🔥 *SWING BUY SIGNAL TRIGGERED: {name}*\n"
+                    f"🔥 *SMART MONEY SWING BUY: {name}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📌 *Strategy:* `{strat_cfg['name']}`\n"
                     f"🎯 *Risk-Reward Ratio:* `{strat_cfg['rrr']}`\n"
-                    f"💡 *Technical Reason:* _{reason_desc}_\n"
+                    f"💡 *Setup Rationale:* _{reason_desc}_\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"💵 *Entry Price:* `₹{curr_price:.2f}`\n"
                     f"📦 *Position Size:* `{qty}` Shares\n"
-                    f"💰 *Capital Invested:* `₹{(curr_price*qty):,.2f}`\n"
+                    f"💰 *Capital Deployed:* `₹{(curr_price*qty):,.2f}`\n"
                     f"🛑 *Stop Loss:* `₹{sl}` (-{strat_cfg['sl_pct']*100:.1f}%)\n"
                     f"🎯 *Target:* `₹{tgt}` (+{strat_cfg['target_pct']*100:.1f}%)\n"
                     f"💼 *Cash Remaining:* `₹{trade_state['virtual_balance']:,.2f}`\n"
-                    f"⏱️ *Holding Expectation:* 3 - 10 Days"
+                    f"⏱️ *Holding Window:* 3 - 10 Days"
                 )
                 break
         except Exception as e:
@@ -694,7 +724,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
-        self.wfile.write(b"NSE Multi-Strategy Engine Active.")
+        self.wfile.write(b"NSE 165 Swing Bot Online.")
 
 def run_health_server():
     port = int(os.environ.get("PORT", 8080))
@@ -714,14 +744,14 @@ threading.Thread(target=run_health_server, daemon=True).start()
 threading.Thread(target=self_ping_loop, daemon=True).start()
 
 # --- STARTUP NOTIFICATION ---
-active_strat_name = STRATEGIES[trade_state.get("active_strategy", "STRAT_1")]["name"]
+active_strat_name = STRATEGIES[trade_state.get("active_strategy", "STRAT_8")]["name"]
 send_menu(
-    f"🚀 *NSE TOP 7 SWING BOT ONLINE*\n\n"
+    f"🚀 *WYCKOFF SPRING & 165 STOCKS BOT ONLINE*\n\n"
     f"🎯 *Mission:* ₹10,000 ➔ ₹1,00,000 Compounding\n"
     f"⚙️ *Currently Active:* `{active_strat_name}`\n"
-    f"📊 *RRR Setup:* Dynamic 1:2.0 to 1:4.0 Risk-to-Reward\n"
-    f"🧪 *Coverage:* 40 NSE Momentum Stocks + NIFTY 50 + BANK NIFTY\n\n"
-    f"Menu se strategy badlein ya Historical Backtest audit run karein:"
+    f"📊 *Universe:* 165 Liquid NSE Stocks + NIFTY 50 + BANK NIFTY\n"
+    f"🛡️ *Risk Architecture:* 1:3.5 Smart Money Setup (-2.8% SL | +11% Target)\n\n"
+    f"Buttons se individual stocks ka detailed backtest audit karein:"
 )
 
 listener_thread = threading.Thread(target=fast_telegram_listener, daemon=True)
